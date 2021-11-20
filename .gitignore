@@ -128,4 +128,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .DS_Store
-pm_gend_nbs/*
+phase1/pm_gend_nbs/*
