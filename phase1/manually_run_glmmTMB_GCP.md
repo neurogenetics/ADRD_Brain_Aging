@@ -2,8 +2,6 @@
 
 using n1-highcpu-96 machine type
 
-## so what was working two days ago doesn't seem to work anymore for setting up the R environment, on new instances I get a seg fault when running glmmTMB. The instance I set up on Oct 6th are still running fine, so I removed the auto-update settings for those instances. Tried from both python and R 4.0 notebook instances, also get the same thing from lngnode7 setup.
-
 # for adding R to the python instance
 add 'deb http://cloud.r-project.org/bin/linux/debian buster-cran40/' to /etc/apt/sources.list
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys FCAE2A0E115C3D8A
