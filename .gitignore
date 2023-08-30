@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 .DS_Store
 phase1/pm_gend_nbs/*
+phase2/pm_gend_nbs/*
