@@ -14,10 +14,10 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
         - for each GEX pool create demultiplexed AnnData files; create_anndata_with_demuxlet_identified_donors.ipynb and pm_run_create_demultiplexed_gex_anndatas.ipynb
         - migrate the phase1 GEX pools for phase1 pools 4 and 5; migrate_phase1_gex_pools.ipynb
         - concatenated the GEX AnnData objects into single AnnData files using Scanpy; combine_demultiplexed_pool_anndatas.ipynb
+5. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
+6. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
+7. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
+     - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
 
-5. Convert ARC data to AnnData object and populate the 'obs' info;
-3. scvi-tools MultiVi was used to generate latent variables and format the data into AnnData objects; MultiVI_analysis.ipynb
-4. Detect doublet cells using Scrublet; scrublet.ipynb
-5. Preliminary cell-type assignment was done using MACA and CNS markers from PangloaDB and Bakken motor cortex. These are not fully appropriate for the brain regions of this experiment but work as a good starting point for cell assignments prior to further curation. label_cells_maca.ipynb via Papermill runner generating and running a notebook per marker set, label_cells_runner.ipynb
-6. QC, clustering, and visualization was done with SCANPY, the clustering is performed with multiple Leiden resolutions; scanpy_runner.ipynb and scanpy_processing.ipynb
-7. Clustering and currated cell assignment done with SCANPY; scanpy_tuning.ipynb
+
+?. Detect doublet cells using Scrublet; scrublet.ipynb
