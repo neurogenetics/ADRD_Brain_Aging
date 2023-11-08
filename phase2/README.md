@@ -18,6 +18,7 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 6. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
 7. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
      - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
+8. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
 
 
 ?. Detect doublet cells using Scrublet; scrublet.ipynb
