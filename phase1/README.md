@@ -21,3 +21,7 @@
     2. manually_run_glmmTMB_GCP.md and glmmTMB.R
     3. post_glmmtmb_diffexp.ipynb
     N. other analyses types run for testing but not used for analysis; glmm_diffexp.ipynb, glmmtmb_diffexp.ipynb, and glm_pb_diffexp.ipynb with corrsponding post processing notebooks and comparisons. post_glm_pb_diffexp.ipynb, post_glmm_diffexp.ipynb, post_glmm_zi_diffexp.ipynb, and compare_de_methods.ipynb
+### Replication of differential analysis
+    1. quantifications/combine_replication_samples.ipynb
+    2. quantifications/combine_ref_disc_rep.ipynb
+    3. quantifications/cluster_replication_data.ipynb
