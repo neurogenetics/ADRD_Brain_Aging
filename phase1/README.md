@@ -18,10 +18,12 @@
     N. other clustering and processing testing not used for analysis; scanpy_cluster_analysis.ipynb and scvi_id_zi_features.ipynb
 ### Differential expression analysis by age group
     1. frmt_glmmtmb_diffexp.ipynb
+        a. frmt_broad_types_by_region_glmmtmb_prep.ipynb
     2. manually_run_glmmTMB_GCP.md and glmmTMB.R
     3. post_glmmtmb_diffexp.ipynb
     N. other analyses types run for testing but not used for analysis; glmm_diffexp.ipynb, glmmtmb_diffexp.ipynb, and glm_pb_diffexp.ipynb with corrsponding post processing notebooks and comparisons. post_glm_pb_diffexp.ipynb, post_glmm_diffexp.ipynb, post_glmm_zi_diffexp.ipynb, and compare_de_methods.ipynb
 ### Replication of differential analysis
     1. quantifications/combine_replication_samples.ipynb
-    2. quantifications/combine_ref_disc_rep.ipynb
-    3. quantifications/cluster_replication_data.ipynb
+    2. quantifications/replication_scrublet.ipynb
+    3. quantifications/combine_ref_disc_rep.ipynb
+    4. quantifications/cluster_replication_data.ipynb
