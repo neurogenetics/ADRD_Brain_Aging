@@ -27,7 +27,9 @@ CELLTYPES="ExN_THEMIS ExN_CUX2_LAMP5 ExN_FEZF2 ExN_RORB_THEMIS ExN_CUX2_ADARB2 E
 
 CELLTYPES="SPN_D1 SPN_D1-2 SPN_D2 SPN_D2-2 InN_ADARB2_VIP InN_LHX6_PVALB InN_ADARB2_LAMP5 InN_LHX6_SST"
 
+REPLICATION="FALSE"
+
 for CELLTYPE in ${CELLTYPES[@]}
 do
-nohup R --no-echo --no-restore --file=/home/jupyter/glmmTMB.R --args /home/jupyter/quants/${CELLTYPE}_glmmtmb_in_df_temp.csv /home/jupyter/results/aging.${CELLTYPE}_glmmtmb_results_temp.csv &
+nohup R --no-echo --no-restore --file=/home/jupyter/glmmTMB.R --args ${REPLICATION} /home/jupyter/quants/${CELLTYPE}_glmmtmb_in_df_temp.csv /home/jupyter/results/aging.${CELLTYPE}_glmmtmb_results_temp.csv &
 done
