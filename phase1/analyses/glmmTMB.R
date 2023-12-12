@@ -9,8 +9,9 @@ library(data.table)
 library(dplyr)
 library(broom.mixed)
 
-in_file <- as.character(args[1])
-out_file <-  as.character(args[2])
+replication <- as.logical(args[1])
+in_file <- as.character(args[2])
+out_file <-  as.character(args[3])
 
 # this_df = fread('/labshare/raph/datasets/adrd_neuro/aging/demux/putamen_df.csv')
 this_df = fread(in_file)
@@ -25,7 +26,12 @@ compute_feature_mixmodel <- function(feature, df, ctrl) {
       ret_value = NULL
     }
     else {
-      this_formula = as.formula(sprintf('%1s ~ old + pool_name + (1 | Sample_id)', feature))
+      if (replication) {
+        this_formula = as.formula(sprintf('%1s ~ old + (1 | Sample_id)', feature))          
+      }
+      else {
+        this_formula = as.formula(sprintf('%1s ~ old + pool_name + (1 | Sample_id)', feature))          
+      }
       this_result <- glmmTMB(this_formula, data=df, family=glmmTMB::tweedie, 
       ziformula= ~0, control = ctrl)
       ret_value = tidy(this_result)
