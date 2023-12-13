@@ -27,7 +27,7 @@ compute_feature_mixmodel <- function(feature, df, ctrl) {
     }
     else {
       if (replication) {
-        this_formula = as.formula(sprintf('%1s ~ old + (1 | Sample_id)', feature))          
+        this_formula = as.formula(sprintf('%1s ~ old + (1 | Sample_ID)', feature))          
       }
       else {
         this_formula = as.formula(sprintf('%1s ~ old + pool_name + (1 | Sample_id)', feature))          
