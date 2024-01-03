@@ -27,3 +27,6 @@
     2. quantifications/replication_scrublet.ipynb
     3. quantifications/combine_ref_disc_rep.ipynb
     4. quantifications/cluster_replication_data.ipynb
+    5. analyses/replication_glmmtmb_prep.ipynb
+    6. manually_run_glmmTMB_GCP.md and glmmTMB.R
+    7. analyses/replication_post_glmmtmb_diffexp.ipynb
