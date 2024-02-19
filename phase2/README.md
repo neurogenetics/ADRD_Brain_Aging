@@ -1,7 +1,7 @@
 # ADRD_Brain_Aging Phase 2
 Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X multiome assay
 
-## Processing steps
+## Quantification, QC, and Clustering steps
 1. NISC ran Cellranger (gex v7.1.0, -arc v2.0.0, -atac v2.0.0) thru count
 2. Cellranger (-arc v2.0.1, -atac v2.1.0) aggr was run to aggregate the count outputs across the samples; cellranger-arc_aggr.ipynb, cellranger-atac_aggr.ipynb, create_consensus_peaks_bed.ipynb
 3. Demultiplex pooled cell data based on genotypes using demuxlet; 
