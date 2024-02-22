@@ -8,17 +8,20 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
     - prepare pool genotypes; prep_genotypes.ipynb
     - run Demuxlet WDL vis GCP Life Sciences; run_demuxlet_wdl_job.ipynb
     - create genotype demultiplexed AnnData files
-4. Create combined demultiplexed AnnData files for each modality    
+4. Detect ambient RNA in GEX pools and non-pooled ARC samples, using CellBender
+    - run Cellbender per sample, run_cellbender_wdl_job.ipynb
+    - take a look at the ambient RNA results, Cellcellbender_results.ipynb
+5. Create combined demultiplexed AnnData files for each modality    
     - ATAC use aggregated pool data; create_aggr_anndata_with_demuxlet_identified_donors.ipynb
     - GEX
         - for each GEX pool create demultiplexed AnnData files; create_anndata_with_demuxlet_identified_donors.ipynb and pm_run_create_demultiplexed_gex_anndatas.ipynb
         - migrate the phase1 GEX pools for phase1 pools 4 and 5; migrate_phase1_gex_pools.ipynb
         - concatenated the GEX AnnData objects into single AnnData files using Scanpy; combine_demultiplexed_pool_anndatas.ipynb
-5. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
-6. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
-7. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
+7. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
+8. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
+9. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
      - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
-8. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
+10. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
 
 
 ?. Detect doublet cells using Scrublet; scrublet.ipynb
