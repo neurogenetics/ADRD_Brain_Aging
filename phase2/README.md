@@ -18,10 +18,8 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
         - migrate the phase1 GEX pools for phase1 pools 4 and 5; migrate_phase1_gex_pools.ipynb
         - concatenated the GEX AnnData objects into single AnnData files using Scanpy; combine_demultiplexed_pool_anndatas.ipynb
 7. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
-8. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
-9. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
+8. Check for additional non-genotype doublet cells using Scrublet; scrublet.ipynb
+9. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
+10. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
      - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
-10. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
-
-
-?. Detect doublet cells using Scrublet; scrublet.ipynb
+11. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
