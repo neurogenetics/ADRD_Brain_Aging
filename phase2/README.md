@@ -26,4 +26,5 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 12. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
 ## Analysis
 1. Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
-1. Regression analysis between quantified features (expression and accessibility) and age; glm_pb_analysis.ipynb
+2. Regression analysis between quantified features (expression and accessibility) and age; glm_pb_analysis.ipynb
+3. Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between feature quantification and age; post_glm_pb_analysis.ipynb
