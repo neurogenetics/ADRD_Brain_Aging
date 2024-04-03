@@ -24,6 +24,7 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
      - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
 11. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
 12. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
+13. Tune Leiden clustering resolution of curated cell-types to get final clusters
 ## Analysis
 1. Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
 2. Regression analysis between quantified features (expression and accessibility) and age; glm_pb_analysis.ipynb
