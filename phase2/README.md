@@ -26,6 +26,15 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 12. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
 13. Tune Leiden clustering resolution of curated cell-types to get final clusters; recluster.ipynb
 ## Analysis
-1. Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
-2. Regression analysis between quantified features (expression and accessibility) and age; pseudobulk_regression_analysis.ipynb. Where possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
-3. Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between feature quantification and age; post_pseudobulk_regression.ipynb
+1. Identify gene expression and chromatin accessibility features associated with age per broad cell-type and cluster specfic cell-type
+    - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
+    - Regression analysis between quantified features (expression and accessibility) and age; pseudobulk_regression_analysis.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
+    - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between feature quantification and age; post_pseudobulk_regression.ipynb
+    - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
+2. Identify chromatin accessibility features correlated with cis proximal age associated gene expression features
+    - Regression analysis between quantified age associated gene expression features and cis proximal chromatin accessibility features; cis_correlation.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
+    - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between age associated gene expression features and cis proximal chromatin accessibility features; post_cis_correlation.ipynb
+    - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
+## Visualization
+1. View a cell-type specific feature ~ age result show the model summary and some scatter plots; specific_age_result.ipynb
+2. View a cell-type specific cis proximal GEX ~ ATAC result show the model summary and some scatter plots; specific_cis_result.ipynb
