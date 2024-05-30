@@ -130,3 +130,6 @@ dmypy.json
 .DS_Store
 phase1/pm_gend_nbs/*
 phase2/pm_gend_nbs/*
+
+# the Papermill generated notebooks
+pm_gend_nbs/
