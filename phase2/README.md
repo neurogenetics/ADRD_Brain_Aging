@@ -35,6 +35,8 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
     - Regression analysis between quantified age associated gene expression features and cis proximal chromatin accessibility features; cis_correlation.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
     - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between age associated gene expression features and cis proximal chromatin accessibility features; post_cis_correlation.ipynb
     - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
+3. Conditioned age regression analysis. Rerun age regression analysis for the age associated GEX features conditioned on <i>cis</i> proximal correlated ATAC features that are also age associated. cis_conditioned_regression_analysis.ipynb.
+    - Summarize the conditioned age regression differences between cell-types. post_cis_conditioned_regression.ipynb
 ## Visualization
 1. View a cell-type specific feature ~ age result show the model summary and some scatter plots; specific_age_result.ipynb
 2. View a cell-type specific cis proximal GEX ~ ATAC result show the model summary and some scatter plots; specific_cis_result.ipynb
