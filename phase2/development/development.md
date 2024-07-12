@@ -3,7 +3,9 @@
    - Latents
        - Per broad and specific cell-types generate latent factors of the age associated gene expression and ATAC peak peak features using [ICA](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.FastICA.html), [NMF](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.NMF.html), and [PCA](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html). Test each of these latent factors for association with age. latent_factors_age_analysis.ipynb and pm_run_latent_age_analysis.ipynb
        - Combine, aggregate, and summarize the results across cell-types. post_latent_factor_analyses.ipynb
-       - Compare all latent factors across cell types and visualize of the the metrics from the generation of the latent factors. summarize_compare_latent_factors.ipynb 
+       - Compare all latent factors across cell types and visualize of the the metrics from the generation of the latent factors. summarize_compare_latent_factors.ipynb
+    - Conditioned age regression analysis. Rerun age regression analysis for the age associated GEX features conditioned on <i>cis</i> proximal correlated ATAC features that are also age associated. cis_conditioned_regression_analysis.ipynb.
+    - Summarize the conditioned age regression differences between cell-types. post_cis_conditioned_regression.ipynb
 3. Figures
     - Age associated features
         - Create a graph of age associated features and partition the graph with Leiden clustering based on [Leiden ModularityVertexPartition](https://leidenalg.readthedocs.io/en/stable/reference.html#modularityvertexpartition). association_graph.ipynb
