@@ -40,3 +40,4 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 ## Visualization
 1. View a cell-type specific feature ~ age result show the model summary and some scatter plots; specific_age_result.ipynb
 2. View a cell-type specific cis proximal GEX ~ ATAC result show the model summary and some scatter plots; specific_cis_result.ipynb
+3. View to proportion of features tested in a cell-type that are age associated; proportion_age_effects.ipynb
