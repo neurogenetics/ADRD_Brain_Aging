@@ -16,3 +16,6 @@
         - Find the high degree features in the graph of age associated latent factors. latent_graphs_high_degree_features.ipynb
         - Run GSEA Enrichr analysis for each of the partitions in the graph of age associated latent factors. gsea_partitioned_latents_age_factors.ipynb
         - Generate of Sankey diagram of the age associated features and paritions of the age associated latent factors along with there GSEA pathways. partitioned_latents_sankey.ipynb
+     
+# Alternate figures
+1. Visualize clusters with MDE instead of UMAP. mde_figures.ipynb
