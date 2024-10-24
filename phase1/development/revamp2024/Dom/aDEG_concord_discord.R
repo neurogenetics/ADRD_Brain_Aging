@@ -171,6 +171,29 @@ ggplot(data = heatmap_data, aes(x = X1, y = X2, fill = value)) +
        fill = "Counts") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))
 
+############################
+# UpSet to Con/DisCord######
+############################
+###### bar plot showing how many genes have 1,2,3,4 shared overlaps... (linking Upset to Con/Discord)
+# Assuming your data frame is named 'df'
+df <- df %>%
+  mutate(
+    non_ne_count = rowSums(select(., -feature) != "NE")
+  )
+
+ggplot(df)
+
+# Assuming your data frame is named 'df'
+ggplot(df, aes(x = factor(non_ne_count))) +
+  geom_bar() +
+  labs(
+    title = "Distribution of aDEGs Shared Across Regions",
+    x = "# Shared Regions",
+    y = "# aDEGs"
+  )+
+  theme_bw()
+
+
 
 
 
