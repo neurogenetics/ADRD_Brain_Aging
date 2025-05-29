@@ -1,6 +1,6 @@
 # ADRD_Brain_Aging
 ## Phase 1: single-nuclei RNA atlas between young and aged subjects in four brain regions
-<img src="phase1/figures/P1_Figure1_Draft_MEM.pdf" width="640px" />
+<img src="phase1/figures/P1_Figure1_Draft_MEM.png" width="640px" />
 
 - Where 'young' subjects were between 20-30 years of age at time of death and 'aged' were 60-85 years of age at time of death
 - Brain regions included for each subject are: Enorhinal cortex (EC), Middle Temporal Gyrus (MTG), Subventricular Zone (SVZ), and Putamen (PUT)
