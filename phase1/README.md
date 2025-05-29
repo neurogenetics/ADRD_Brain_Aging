@@ -1,5 +1,5 @@
 # ADRD_Brain_Aging Phase 1
-<img src="figures/P1_Figure1_Draft_MEM.png" width="640px" />
+<img src="figures/P1_Figure1_Draft_MEM.png" width="320px" />
 
 - Single-nuclei RNA atlas between young and aged subjects in four brain regions
 - Where 'young' subjects were between 20-30 years of age at time of death and 'aged' were 60-85 years of age at time of death
