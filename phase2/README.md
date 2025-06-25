@@ -19,12 +19,13 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
         - concatenated the GEX AnnData objects into single AnnData files using Scanpy; combine_demultiplexed_pool_anndatas.ipynb
 7. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
 8. Check for additional non-genotype doublet cells using Scrublet; scrublet.ipynb
-9. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
-10. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
+9. Use Celltypist with human brain models to predict cell-type labels as a starting point; prep_celltypist_input.ipynb
+10. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
+11. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
      - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
-11. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
-12. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
-13. Tune Leiden clustering resolution of curated cell-types to get final clusters; recluster.ipynb
+12. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
+13. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
+14. Tune Leiden clustering resolution of curated cell-types to get final clusters; recluster.ipynb
 ## Analysis
 1. Identify gene expression and chromatin accessibility features associated with age per broad cell-type and cluster specfic cell-type
     - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
