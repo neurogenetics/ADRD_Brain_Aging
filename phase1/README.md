@@ -44,8 +44,8 @@ Samples were obtained from both Young individuals (aged 20-30 years, n=6) and Ag
 
 
 ## Analysis & Figures Code 
-* Figure 1A: Design & Workflow	Biorender 
-* Figure 1B/C: Nuclei Distribution	Adaptation of Supplemental Fig. 1 Donut Plots (see below)
+* Figure 1A: Design & Workflow--Biorender 
+* Figure 1B/C: Nuclei Distribution--Adaptation of Supplemental Fig. 1 Donut Plots (see below)
 * Figure 1D/E, Supp. Fig. 2: UMAP Creation 	https://github.com/neurogenetics/ADRD_Brain_Aging/blob/main/phase1/development/revamp2024/Monica/P1_UMAPs_Fig1_SuppFig2.ipynb 
 * Figure 1F: Proportion Bars 	https://github.com/neurogenetics/ADRD_Brain_Aging/blob/main/phase1/development/revamp2024/Monica/P1_Proportions_Bars_Fig1.ipynb 
 * Figure 1G: Regional Specificity Heatmap / Figure 1H: Speckle Proportion analysis heat map	https://github.com/neurogenetics/ADRD_Brain_Aging/blob/main/phase1/development/revamp2024/Monica/P1_ProportionAndSpecificity_Figure1.R 
