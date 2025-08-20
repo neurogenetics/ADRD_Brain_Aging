@@ -2,7 +2,8 @@
 <img src="figures/P1_Figure1_Draft_MEM.png" width="320px" />
 
 ## Link to bioRxiv Pre-Print:
-Region-Specific Transcriptional Signatures of Brain Aging in the Absence of Neuropathology at the Single-cell Level
+*Region-Specific Transcriptional Signatures of Brain Aging in the Absence of Neuropathology at the Single-cell Level*
+
 Monica E. Mesecar, Megan F. Duffy, Dominic J. Acri, Jinhui Ding, Rebekah G. Langston, Syed I. Shah, Mike A. Nalls, Xylena Reed, Sonja W. Scholz, D. Thad Whitaker, Pavan K. Auluck, Stefano Marenco, Alex R. DeCasien, J. Raphael Gibbs, Mark R. Cookson
 bioRxiv 2023.07.31.551097; doi: https://doi.org/10.1101/2023.07.31.551097
 
