@@ -1,6 +1,9 @@
 # ADRD_Brain_Aging Phase 1
 <img src="figures/P1_Figure1_Draft_MEM.png" width="320px" />
 
+## Link to bioRxiv Pre-Print:
+https://www.biorxiv.org/content/10.1101/2023.07.31.551097v2
+
  ## Description:
 Single-nucleus RNA sequencing study of postmortem human brain tissue samples across four brain regions: the entorhinal cortex (EC), middle temporal gyrus (MTG), subventricular zone (SVZ), and putamen (PUT).
 
