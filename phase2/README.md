@@ -10,7 +10,7 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
     - create genotype demultiplexed AnnData files
 4. Detect ambient RNA in GEX pools and non-pooled ARC samples, using CellBender
     - run Cellbender per sample, run_cellbender_wdl_job.ipynb
-    - take a look at the ambient RNA results, Cellcellbender_results.ipynb
+    - take a look at the ambient RNA results, cellbender_results.ipynb
 5. Create combined demultiplexed AnnData files for each modality    
     - ATAC use aggregated pool data; create_aggr_anndata_with_demuxlet_identified_donors.ipynb
     - GEX
