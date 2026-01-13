@@ -14,18 +14,18 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 5. Create combined demultiplexed AnnData files for each modality    
     - ATAC use aggregated pool data; create_aggr_anndata_with_demuxlet_identified_donors.ipynb
     - GEX
-        - for each GEX pool create demultiplexed AnnData files; create_anndata_with_demuxlet_identified_donors.ipynb and pm_run_create_demultiplexed_gex_anndatas.ipynb
         - migrate the phase1 GEX pools for phase1 pools 4 and 5; migrate_phase1_gex_pools.ipynb
+        - for each GEX pool create demultiplexed AnnData files; create_anndata_with_demuxlet_identified_donors.ipynb and pm_run_create_demultiplexed_gex_anndatas.ipynb 
         - concatenated the GEX AnnData objects into single AnnData files using Scanpy; combine_demultiplexed_pool_anndatas.ipynb
 7. Convert ARC data to AnnData object and populate the 'obs' info; convert_arc_data.ipynb
 8. Check for additional non-genotype doublet cells using Scrublet; scrublet.ipynb
 9. Use Celltypist with human brain models to predict cell-type labels as a starting point; prep_celltypist_input.ipynb
-10. scvi-tools MultiVi was used to generate latent variables across ARC, GEX, and ATAC and cluster the data; MultiVI_analysis.ipynb
-11. Preliminary automated cell-type labeling using Phase1 labels and CellAssign predictions based on scTypes and Bakken et al marker sets; pm_run_cellassign.ipynb, scvi_cellassign.ipynb
-     - compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
-12. Populate the multiVI clustering and CellAssign to an anndata object that still retains the full features data instead of just the high variance features used for clustering; populate_full_anndata.ipynb
-13. Annotate the curated cell-type assignments back into the MultiVI anndata object; annotate_curated_cluster.ipynb
-14. Tune Leiden clustering resolution of curated cell-types to get final clusters; recluster.ipynb
+10. Perform initial clustering and annotation of cell types using only the mRNA (GEX and ARC cells) features; initial_clustering_rna.ipynb
+11. Subcluster by broad cell type classes, exictatory, inhibitory, and non-neuronal to refine and manually curate appropriate cell type labels
+    - For each broad cell type class perform clustering for a range of resolutions; broadtype_subcluster_rna.ipynb
+    - Use SAHA for cluster and resolution refinement and to curate final cell-type labels; ?
+12. Perform joint analysis of RNA and ATAC using MultiVI so final RNA annotation labels can be transferred to ATAC cells; multivi_joint_analysis.ipynb
+13. compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
 ## Analysis
 1. Identify gene expression and chromatin accessibility features associated with age per broad cell-type and cluster specfic cell-type
     - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
