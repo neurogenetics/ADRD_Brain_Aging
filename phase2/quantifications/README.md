@@ -22,6 +22,7 @@
     - For each broad cell type class perform clustering for a range of resolutions; broadtype_subcluster_rna.ipynb
     - Use SAHA for cluster and resolution refinement and to curate final cell-type labels; ?
 12. Perform joint analysis of RNA and ATAC using MultiVI so final RNA annotation labels can be transferred to ATAC cells; multivi_joint_analysis.ipynb
-13. compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
+13. Transfer RNA cell-type annotation labels to the ATAC cells; predict_celltypes_from_multivi.ipynb
+14. compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
 
 
