@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "autogluon>=1.4.0",
+    "igraph>=1.0.0",
     "jupyterlab>=4.4.7",
     "jupyterlab-git>=0.51.2",
     "scanpy>=1.11.4",
