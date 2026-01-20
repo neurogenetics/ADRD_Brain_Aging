@@ -26,7 +26,6 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
     - Use SAHA for cluster and resolution refinement and to curate final cell-type labels; ?
 12. Perform joint analysis of RNA and ATAC using MultiVI so final RNA annotation labels can be transferred to ATAC cells; multivi_joint_analysis.ipynb
 13. Transfer RNA cell-type annotation labels to the ATAC cells; predict_celltypes_from_multivi.ipynb
-14. compare cell-types assigments between label sets and with Leiden clusters; compare_celltype_predictions.ipynb
 ## Analysis
 1. Identify gene expression and chromatin accessibility features associated with age per broad cell-type and cluster specfic cell-type
     - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
