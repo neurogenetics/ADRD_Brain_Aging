@@ -8,11 +8,7 @@ project = "aging_phase2"
 DEBUG = True
 TESTING = False
 TEST_FEATURE_SIZE = 1000
-categories = [
-    "curated_type",
-    "cluster_name",
-]  # 'curated_type' for broad and 'cluster_name' for specific
-
+var_modal_dict = {"Gene Expression": "rna", "Peaks": "atac"}
 # directories
 wrk_dir = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 quants_dir = f"{wrk_dir}/quants"
@@ -58,6 +54,8 @@ if DEBUG:
 
 print(adata_raw.obs.modality.value_counts())
 print(adata_raw.obs.Study.value_counts())
+print(adata_raw.var.modality.value_counts())
+
 
 # 1. Create the aggregate AnnData
 pb_adata = sc.get.aggregate(adata_annot, by=["sample_id", "cell_label"], func="sum")
@@ -65,6 +63,8 @@ peek_anndata(pb_adata, "pseudobulked anndata", DEBUG)
 
 # 2. Loop through cell types for your regression analysis
 unique_cell_types = pb_adata.obs["cell_label"].unique()
+if DEBUG:
+    print(unique_cell_types)
 
 for ct in unique_cell_types:
     print(f"{ct=}")
@@ -84,4 +84,9 @@ for ct in unique_cell_types:
 
     # Run regression...
     print(f"Ready to regress {ct} with shape {df_reg.shape}")
-    peek_dataframe(df_reg, f"{ct} dataframes", DEBUG)
+    # peek_dataframe(df_reg, f"{ct} dataframes", DEBUG)
+
+    # Save the converted data to file
+    out_file = f"{quants_dir}/{project}.{ct}.parquet"
+    df_reg.to_parquet(out_file)
+    print(f"Saved {ct} to {out_file}")
