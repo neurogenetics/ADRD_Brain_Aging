@@ -52,12 +52,28 @@ adata_raw = sc.read(raw_anndata_file)
 if DEBUG:
     peek_anndata(adata_raw, f"loaded {raw_anndata_file}", DEBUG)
 
+# subset adata_raw to only cells in adata_annot
+print("subsetting raw anndata to cells in annotated anndata")
+adata_raw = adata_raw[adata_raw.obs_names.isin(adata_annot.obs_names), :].copy()
+if DEBUG:
+    peek_anndata(adata_raw, "subsetted raw anndata", DEBUG)
+
+# transfer cell labels
+print("transferring cell labels from annotated anndata to raw anndata")
+adata_raw.obs["cell_label"] = adata_annot.obs["cell_label"]
+adata_raw.obs["label_prob"] = adata_annot.obs["label_prob"]
+
+# drop un-needed columns
+print("dropping un-needed columns from raw anndata")
+drop_columns = ["phase1_cluster", "phase1_celltype"]
+adata_raw.obs = adata_raw.obs.drop(columns=drop_columns, errors="ignore")
+
 print(adata_raw.obs.modality.value_counts())
 print(adata_raw.obs.Study.value_counts())
 print(adata_raw.var.modality.value_counts())
 
 # 1. Create the aggregate AnnData
-pb_adata = sc.get.aggregate(adata_annot, by=["sample_id", "cell_label"], func="sum")
+pb_adata = sc.get.aggregate(adata_raw, by=["sample_id", "cell_label"], func="sum")
 peek_anndata(pb_adata, "pseudobulked anndata", DEBUG)
 
 # 2. Loop through cell types for your regression analysis
@@ -75,8 +91,8 @@ for ct in unique_cell_types:
         # Subset AnnData by modality using the var table
         ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full].copy()
         # find the cell counts per donor on the subset
-        adata_cell_info = adata_annot[
-            adata_annot.obs.cell_label == ct, adata_annot.var.modality == modal_full
+        adata_cell_info = adata_raw[
+            adata_raw.obs.cell_label == ct, adata_raw.var.modality == modal_full
         ]
         donor_counts = adata_cell_info.obs.groupby("sample_id").size()
 
