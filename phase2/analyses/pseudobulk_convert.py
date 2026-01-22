@@ -86,13 +86,13 @@ for ct in unique_cell_types:
 
         if ct_modal_data.n_vars > 0:
             # Convert to DataFrame for statsmodels/regression
-            df_reg = ct_modal_data.to_df()
+            df_modal = ct_modal_data.to_df()
 
             # Run regression...
-            print(f"Ready to regress {ct} {modal_short} with shape {df_reg.shape}")
-            # peek_dataframe(df_reg, f"{ct} {modal_short} dataframes", DEBUG)
+            print(f"Ready to regress {ct} {modal_short} with shape {df_modal.shape}")
+            # peek_dataframe(df_modal, f"{ct} {modal_short} dataframes", DEBUG)
 
             # Save the converted data to file
             out_file = f"{quants_dir}/{project}.{ct.replace(' ', '_')}.{modal_short}.parquet"
-            df_reg.to_parquet(out_file)
+            df_modal.to_parquet(out_file)
             print(f"Saved {ct} {modal_short} to {out_file}")
