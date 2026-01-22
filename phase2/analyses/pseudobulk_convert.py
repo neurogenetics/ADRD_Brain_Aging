@@ -115,6 +115,9 @@ for ct in unique_cell_types:
             # Convert to DataFrame for statsmodels/regression
             df_modal = ct_modal_data.to_df()
 
+            # correct the scanpy agrregated index names since we are split by cell-type already
+            df_modal.index = df_modal.index.str.replace(f"_{ct}", "")
+
             # Run regression...
             print(
                 f"Pseudobulk converted {ct} {modal_short} with shape {df_modal.shape}"
