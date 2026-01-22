@@ -1,147 +1,216 @@
+import argparse
+import logging
+import sys
+from pathlib import Path
+
 import scanpy as sc
 from anndata import AnnData
 from pandas import DataFrame
 from tabulate import tabulate
 
-# variables and constants
-project = "aging_phase2"
-DEBUG = True
-TESTING = False
-TEST_FEATURE_SIZE = 1000
-var_modal_dict = {"Gene Expression": "rna", "Peaks": "atac"}
-# directories
-wrk_dir = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
-quants_dir = f"{wrk_dir}/quants"
-results_dir = f"{wrk_dir}/results"
-figures_dir = f"{wrk_dir}/figures"
-sc.settings.figdir = f"{figures_dir}/"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-# in files
-raw_anndata_file = f"{quants_dir}/{project}.raw.multivi_prep.h5ad"
-anndata_file = f"{quants_dir}/{project}.multivi.annotated.h5ad"
+# Constants
+DEFAULT_PROJECT = "aging_phase2"
+DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
+VAR_MODAL_DICT = {"Gene Expression": "rna", "Peaks": "atac"}
 
-# out files
+# Thresholds
+MIN_CELLS_RNA = 10
+MIN_CELLS_ATAC = 20
+MIN_CELLS_PROP = 0.30
+TARGET_SUM_NORM = 1e6
 
 
-# helper functions
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Convert single-cell AnnData to pseudobulk profiles."
+    )
+    parser.add_argument(
+        "--project",
+        type=str,
+        default=DEFAULT_PROJECT,
+        help="Project name used for file prefixes.",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        default=DEFAULT_WRK_DIR,
+        help="Base working directory.",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="Enable debug output."
+    )
+    return parser.parse_args()
+
+
 def peek_anndata(adata: AnnData, message: str = None, verbose: bool = False):
-    if message is not None and len(message) > 0:
-        print(message)
+    if message:
+        logger.info(message)
     print(adata)
     if verbose:
         print(tabulate(adata.obs.head(), headers="keys", tablefmt="psql"))
         print(tabulate(adata.var.head(), headers="keys", tablefmt="psql"))
 
 
-def peek_dataframe(df: DataFrame, message: str = None, verbose: bool = False):
-    if message is not None and len(message) > 0:
-        print(message)
-    print(f"{df.shape=}")
-    if verbose:
-        print(tabulate(df.head(), headers="keys", tablefmt="psql"))
+def load_and_prep_data(
+    raw_path: Path, annot_path: Path, debug: bool = False
+) -> tuple[AnnData, AnnData]:
+    """Loads raw and annotated AnnData files and synchronizes them."""
+    logger.info(f"Loading annotated AnnData: {annot_path}")
+    if not annot_path.exists():
+        logger.error(f"File not found: {annot_path}")
+        sys.exit(1)
+    adata_annot = sc.read(annot_path, cache=True)
+
+    logger.info(f"Loading raw AnnData: {raw_path}")
+    if not raw_path.exists():
+        logger.error(f"File not found: {raw_path}")
+        sys.exit(1)
+    adata_raw = sc.read(raw_path)
+
+    if debug:
+        peek_anndata(adata_annot, "Loaded annotated AnnData", debug)
+        peek_anndata(adata_raw, "Loaded raw AnnData", debug)
+
+    # Subset and align raw data to annotated data
+    logger.info("Aligning raw AnnData to annotated AnnData cells")
+    # Using strict label transfer based on index intersection/ordering
+    adata_raw = adata_raw[adata_annot.obs_names, :].copy()
+
+    # Transfer necessary columns
+    logger.info("Transferring metadata (cell_label, label_prob, sample_id)")
+    adata_raw.obs["cell_label"] = adata_annot.obs["cell_label"]
+    adata_raw.obs["label_prob"] = adata_annot.obs["label_prob"]
+    
+    # Ensure sample_id is present for aggregation
+    if "sample_id" in adata_annot.obs.columns:
+        adata_raw.obs["sample_id"] = adata_annot.obs["sample_id"]
+
+    # Drop unnecessary columns
+    drop_columns = ["phase1_cluster", "phase1_celltype"]
+    adata_raw.obs = adata_raw.obs.drop(columns=drop_columns, errors="ignore")
+
+    if debug:
+        peek_anndata(adata_raw, "Synced Raw AnnData", debug)
+        print(adata_raw.obs.modality.value_counts())
+
+    return adata_raw, adata_annot
 
 
-# load the annatated anndate file
-print("loading the annotated multivi anndata file")
-adata_annot = sc.read(anndata_file, cache=True)
-if DEBUG:
-    peek_anndata(adata_annot, f"loaded {anndata_file}", DEBUG)
-# load the full raw anndata file
-print("loading the full raw multivi anndata file")
-adata_raw = sc.read(raw_anndata_file)
-if DEBUG:
-    peek_anndata(adata_raw, f"loaded {raw_anndata_file}", DEBUG)
+def process_modality(
+    ct_data: AnnData,
+    raw_full: AnnData,
+    ct: str,
+    modal_full: str,
+    modal_short: str,
+    output_dir: Path,
+    project_name: str,
+):
+    """Filters, normalizes, and saves pseudobulk data for a specific modality."""
+    # Subset by modality
+    ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full].copy()
 
-# subset adata_raw to only cells in adata_annot
-print("subsetting raw anndata to cells in annotated anndata")
-adata_raw = adata_raw[adata_raw.obs_names.isin(adata_annot.obs_names), :].copy()
-if DEBUG:
-    peek_anndata(adata_raw, "subsetted raw anndata", DEBUG)
+    if ct_modal_data.n_vars == 0:
+        logger.warning(f"No features found for {ct} - {modal_full}")
+        return
 
-# transfer cell labels
-print("transferring cell labels from annotated anndata to raw anndata")
-adata_raw.obs["cell_label"] = adata_annot.obs["cell_label"]
-adata_raw.obs["label_prob"] = adata_annot.obs["label_prob"]
+    # Calculate donor-level cell counts to identify low-count samples
+    adata_cell_info = raw_full[
+        raw_full.obs.cell_label == ct,
+        raw_full.var.modality == modal_full
+    ]
+    donor_counts = adata_cell_info.obs.groupby("sample_id").size()
 
-# drop un-needed columns
-print("dropping un-needed columns from raw anndata")
-drop_columns = ["phase1_cluster", "phase1_celltype"]
-adata_raw.obs = adata_raw.obs.drop(columns=drop_columns, errors="ignore")
+    min_cells = MIN_CELLS_RNA if modal_short == "rna" else MIN_CELLS_ATAC
+    low_count_samples = list(
+        donor_counts[donor_counts < min_cells].index.values
+    )
+    
+    # Mask donors with low cell counts
+    # The index in pseudobulk is usually "{sample}_{celltype}"
+    ct_low_count_ids = [f"{x}_{ct}" for x in low_count_samples]
+    donor_mask = ct_modal_data.obs_names.isin(ct_low_count_ids)
 
-print(adata_raw.obs.modality.value_counts())
-print(adata_raw.obs.Study.value_counts())
-print(adata_raw.var.modality.value_counts())
+    # Reset X to raw sums
+    ct_modal_data.X = ct_modal_data.layers["sum"].copy()
+    ct_modal_data.X[donor_mask, :] = 0
 
-# 1. Create the aggregate AnnData
-pb_adata = sc.get.aggregate(adata_raw, by=["sample_id", "cell_label"], func="sum")
-peek_anndata(pb_adata, "pseudobulked anndata", DEBUG)
+    # Filter features
+    min_cells_threshold = int(ct_modal_data.n_obs * MIN_CELLS_PROP)
+    pre_filter = ct_modal_data.n_vars
+    sc.pp.filter_genes(ct_modal_data, min_cells=min_cells_threshold)
+    post_filter = ct_modal_data.n_vars
 
-# 2. Loop through cell types for your regression analysis
-unique_cell_types = pb_adata.obs["cell_label"].unique()
-if DEBUG:
-    print(unique_cell_types)
+    logger.info(
+        f"[{ct} - {modal_short}] Filtered {pre_filter - post_filter} features. "
+        f"Masked {len(low_count_samples)} low-count samples."
+    )
 
-for ct in unique_cell_types:
-    print(f"{ct=}")
-    # Extract just the samples for this cell type
-    ct_data = pb_adata[pb_adata.obs["cell_label"] == ct].copy()
+    # Normalize
+    # RNA: CPM + Log1p | ATAC: RPM + Log1p
+    sc.pp.normalize_total(ct_modal_data, target_sum=TARGET_SUM_NORM)
+    sc.pp.log1p(ct_modal_data)
 
-    # Loop through modalities (rna/atac)
-    for modal_full, modal_short in var_modal_dict.items():
-        # Subset AnnData by modality using the var table
-        ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full].copy()
-        # find the cell counts per donor on the subset
-        adata_cell_info = adata_raw[
-            adata_raw.obs.cell_label == ct, adata_raw.var.modality == modal_full
-        ]
-        donor_counts = adata_cell_info.obs.groupby("sample_id").size()
+    # Convert to DataFrame
+    df_modal = ct_modal_data.to_df()
+    # Clean index names: remove the cell type suffix added by aggregation if present
+    df_modal.index = df_modal.index.str.replace(f"_{ct}", "")
 
-        if ct_modal_data.n_vars > 0:
-            # Determine min cells threshold based on modality
-            min_cells = 10 if modal_short == "rna" else 20
-            low_count_samples = list(
-                donor_counts[donor_counts < min_cells].index.values
+    # Save
+    out_file = output_dir / f"{project_name}.{ct.replace(' ', '_')}.{modal_short}.parquet"
+    df_modal.to_parquet(out_file)
+    logger.info(f"Saved {out_file} (Shape: {df_modal.shape})")
+
+
+def main():
+    args = parse_args()
+    debug = args.debug
+
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    figures_dir = work_dir / "figures"
+    sc.settings.figdir = figures_dir
+
+    raw_file = quants_dir / f"{args.project}.raw.multivi_prep.h5ad"
+    annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
+
+    # 1. Load and Sync Data
+    adata_raw, _ = load_and_prep_data(raw_file, annot_file, debug)
+
+    # 2. Pseudobulk Aggregation
+    logger.info("Aggregating data by sample_id and cell_label...")
+    pb_adata = sc.get.aggregate(
+        adata_raw, by=["sample_id", "cell_label"], func="sum"
+    )
+    
+    if debug:
+        peek_anndata(pb_adata, "Pseudobulked AnnData", debug)
+
+    # 3. Process each Cell Type
+    unique_cell_types = pb_adata.obs["cell_label"].unique()
+    logger.info(f"Processing {len(unique_cell_types)} cell types: {unique_cell_types}")
+
+    for ct in unique_cell_types:
+        logger.info(f"--- Processing Cell Type: {ct} ---")
+        ct_data = pb_adata[pb_adata.obs["cell_label"] == ct].copy()
+
+        for modal_full, modal_short in VAR_MODAL_DICT.items():
+            process_modality(
+                ct_data=ct_data,
+                raw_full=adata_raw,
+                ct=ct,
+                modal_full=modal_full,
+                modal_short=modal_short,
+                output_dir=quants_dir,
+                project_name=args.project,
             )
-            ct_low_count_samples = [f"{x}_{ct}" for x in low_count_samples]
-            donor_mask = ct_modal_data.obs_names.isin(ct_low_count_samples)
 
-            # Initialize X with sums
-            ct_modal_data.X = ct_modal_data.layers["sum"].copy()
 
-            # mask donors with low cell counts
-            ct_modal_data.X[donor_mask, :] = 0
-
-            # now filter features that aren't well detected
-            min_cells_threshold = int(ct_modal_data.n_obs * 0.30)
-            pre_filter_var_count = ct_modal_data.n_vars
-            sc.pp.filter_genes(ct_modal_data, min_cells=min_cells_threshold)
-            post_filter_var_counts = ct_modal_data.n_vars
-            print(
-                (
-                    f"## for {ct} {len(low_count_samples)} samples had a low cell cell count and "
-                    f"{pre_filter_var_count - post_filter_var_counts} features were filtered"
-                )
-            )
-
-            # For RNA: CPM + Log1p
-            # For ATAC: RPM + Log1p (standard for linear regression input)
-            sc.pp.normalize_total(ct_modal_data, target_sum=1e6)
-            sc.pp.log1p(ct_modal_data)
-
-            # Convert to DataFrame for statsmodels/regression
-            df_modal = ct_modal_data.to_df()
-
-            # correct the scanpy agrregated index names since we are split by cell-type already
-            df_modal.index = df_modal.index.str.replace(f"_{ct}", "")
-
-            # Run regression...
-            print(
-                f"Pseudobulk converted {ct} {modal_short} with shape {df_modal.shape}"
-            )
-
-            # Save the converted data to file
-            out_file = (
-                f"{quants_dir}/{project}.{ct.replace(' ', '_')}.{modal_short}.parquet"
-            )
-            df_modal.to_parquet(out_file)
-            print(f"Saved {ct} {modal_short} to {out_file}")
+if __name__ == "__main__":
+    main()
