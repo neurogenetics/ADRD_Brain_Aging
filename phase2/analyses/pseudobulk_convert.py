@@ -87,6 +87,6 @@ for ct in unique_cell_types:
     # peek_dataframe(df_reg, f"{ct} dataframes", DEBUG)
 
     # Save the converted data to file
-    out_file = f"{quants_dir}/{project}.{ct}.parquet"
+    out_file = f"{quants_dir}/{project}.{ct.replace(' ', '_')}.parquet"
     df_reg.to_parquet(out_file)
     print(f"Saved {ct} to {out_file}")
