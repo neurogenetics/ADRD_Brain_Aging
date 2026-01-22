@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+import warnings
 from pathlib import Path
 
 import scanpy as sc
@@ -124,7 +125,7 @@ def process_modality(
         raw_full.obs.cell_label == ct,
         raw_full.var.modality == modal_full
     ]
-    donor_counts = adata_cell_info.obs.groupby("sample_id").size()
+    donor_counts = adata_cell_info.obs.groupby("sample_id", observed=True).size()
 
     min_cells = MIN_CELLS_RNA if modal_short == "rna" else MIN_CELLS_ATAC
     low_count_samples = list(
@@ -153,7 +154,13 @@ def process_modality(
 
     # Normalize
     # RNA: CPM + Log1p | ATAC: RPM + Log1p
-    sc.pp.normalize_total(ct_modal_data, target_sum=TARGET_SUM_NORM)
+    # Suppress warning about zero-count cells (intentionally masked)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="Some cells have zero counts", category=UserWarning
+        )
+        sc.pp.normalize_total(ct_modal_data, target_sum=TARGET_SUM_NORM)
+    
     sc.pp.log1p(ct_modal_data)
 
     # Convert to DataFrame
