@@ -6,7 +6,6 @@ from pathlib import Path
 
 import scanpy as sc
 from anndata import AnnData
-from pandas import DataFrame
 from tabulate import tabulate
 
 # Configure logging
@@ -181,8 +180,6 @@ def main():
     # Setup directories
     work_dir = Path(args.work_dir)
     quants_dir = work_dir / "quants"
-    figures_dir = work_dir / "figures"
-    sc.settings.figdir = figures_dir
 
     raw_file = quants_dir / f"{args.project}.raw.multivi_prep.h5ad"
     annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
