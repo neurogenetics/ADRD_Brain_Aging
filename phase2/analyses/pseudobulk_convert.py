@@ -79,14 +79,20 @@ for ct in unique_cell_types:
     sc.pp.normalize_total(ct_data, target_sum=1e6)  # CPM
     sc.pp.log1p(ct_data)  # Log2(CPM+1)
 
-    # Convert to DataFrame for statsmodels/regression
-    df_reg = ct_data.to_df()
+    # Loop through modalities (rna/atac)
+    for modal_full, modal_short in var_modal_dict.items():
+        # Subset AnnData by modality using the var table
+        ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full]
 
-    # Run regression...
-    print(f"Ready to regress {ct} with shape {df_reg.shape}")
-    # peek_dataframe(df_reg, f"{ct} dataframes", DEBUG)
+        if ct_modal_data.n_vars > 0:
+            # Convert to DataFrame for statsmodels/regression
+            df_reg = ct_modal_data.to_df()
 
-    # Save the converted data to file
-    out_file = f"{quants_dir}/{project}.{ct.replace(' ', '_')}.parquet"
-    df_reg.to_parquet(out_file)
-    print(f"Saved {ct} to {out_file}")
+            # Run regression...
+            print(f"Ready to regress {ct} {modal_short} with shape {df_reg.shape}")
+            # peek_dataframe(df_reg, f"{ct} {modal_short} dataframes", DEBUG)
+
+            # Save the converted data to file
+            out_file = f"{quants_dir}/{project}.{ct.replace(' ', '_')}.{modal_short}.parquet"
+            df_reg.to_parquet(out_file)
+            print(f"Saved {ct} {modal_short} to {out_file}")
