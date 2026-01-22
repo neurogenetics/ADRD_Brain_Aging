@@ -71,20 +71,21 @@ for ct in unique_cell_types:
     # Extract just the samples for this cell type
     ct_data = pb_adata[pb_adata.obs["cell_label"] == ct].copy()
 
-    # The aggregation put the data in layers['sum'], but normalize_total expects X
-    ct_data.X = ct_data.layers["sum"].copy()
-
-    # Now you have a standard AnnData for this cell type
-    # You can compute CPM and Log2 here easily:
-    sc.pp.normalize_total(ct_data, target_sum=1e6)  # CPM
-    sc.pp.log1p(ct_data)  # Log2(CPM+1)
-
     # Loop through modalities (rna/atac)
     for modal_full, modal_short in var_modal_dict.items():
         # Subset AnnData by modality using the var table
-        ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full]
+        ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full].copy()
 
         if ct_modal_data.n_vars > 0:
+            # The aggregation put the data in layers['sum'], but normalize_total expects X
+            ct_modal_data.X = ct_modal_data.layers["sum"].copy()
+
+            # Apply normalization and log transformation per modality
+            # For RNA: CPM + Log1p
+            # For ATAC: RPM + Log1p (standard for linear regression input)
+            sc.pp.normalize_total(ct_modal_data, target_sum=1e6)
+            sc.pp.log1p(ct_modal_data)
+
             # Convert to DataFrame for statsmodels/regression
             df_modal = ct_modal_data.to_df()
 
