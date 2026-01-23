@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 # Constants
 DEFAULT_PROJECT = "aging_phase2"
 DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
-VAR_MODAL_DICT = {"Gene Expression": "rna", "Peaks": "atac"}
 
 
 def parse_args():
