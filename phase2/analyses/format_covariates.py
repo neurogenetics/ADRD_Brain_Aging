@@ -97,6 +97,13 @@ def main():
     covars_df.loc[covars_df.bmi.isna(), "bmi"] = covars_df.bmi.mean().round(1)
     peek_dataframe(covars_df, "filled missing covariate values", debug)
 
+    # since there are ancestries with small counts, convert them to other
+    covars_df.ancestry = covars_df.ancestry.cat.add_categories("Other")
+    covars_df.loc[
+        ~covars_df.ancestry.isin(["African American", "Caucasian"]), "ancestry"
+    ] = "Other"
+    peek_dataframe(covars_df, "modified ancestry categories", debug)
+
     if debug:
         print(tabulate(covars_df.info(), headers="keys", tablefmt="psql"))
         print(covars_df.smoker.value_counts())
@@ -104,11 +111,31 @@ def main():
 
     # need to set the pool term based on modality being analyzed
     for modality in ["rna", "atac"]:
+        logger.info(f"formatting covariates file for {modality}")
         if modality == "rna":
             covars_df["pool"] = covars_df.gex_pool
+            donor_counts = (
+                adata.obs.loc[adata.obs.modality.isin(["expression", "paired"])]
+                .groupby(["cell_label", "sample_id"], observed=True)
+                .size()
+            )
         elif modality == "atac":
             covars_df["pool"] = covars_df.atac_pool
+
+            donor_counts = (
+                adata.obs.loc[adata.obs.modality.isin(["accessibility", "paired"])]
+                .groupby(["cell_label", "sample_id"], observed=True)
+                .size()
+            )
+        # formatting the counts to columns to merge with the rest of the covariates
+        donor_counts_df = donor_counts.unstack(level=0)
+        donor_counts_df.columns.name = None
+        donor_counts_df.index.name = None
+        donor_counts_df.columns = [x.replace(" ", "_") for x in donor_counts_df.columns]
         out_df = covars_df.drop(columns=["gex_pool", "atac_pool"])
+        out_df = out_df.merge(
+            donor_counts_df, how="inner", left_index=True, right_index=True
+        )
         peek_dataframe(out_df, f"set pool covariate for {modality}", debug)
 
         # save the final covariate file
