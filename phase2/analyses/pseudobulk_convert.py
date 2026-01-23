@@ -42,9 +42,7 @@ def parse_args():
         default=DEFAULT_WRK_DIR,
         help="Base working directory.",
     )
-    parser.add_argument(
-        "--debug", action="store_true", help="Enable debug output."
-    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
 
@@ -86,10 +84,6 @@ def load_and_prep_data(
     logger.info("Transferring metadata (cell_label, label_prob, sample_id)")
     adata_raw.obs["cell_label"] = adata_annot.obs["cell_label"]
     adata_raw.obs["label_prob"] = adata_annot.obs["label_prob"]
-    
-    # Ensure sample_id is present for aggregation
-    if "sample_id" in adata_annot.obs.columns:
-        adata_raw.obs["sample_id"] = adata_annot.obs["sample_id"]
 
     # Drop unnecessary columns
     drop_columns = ["phase1_cluster", "phase1_celltype"]
@@ -121,16 +115,13 @@ def process_modality(
 
     # Calculate donor-level cell counts to identify low-count samples
     adata_cell_info = raw_full[
-        raw_full.obs.cell_label == ct,
-        raw_full.var.modality == modal_full
+        raw_full.obs.cell_label == ct, raw_full.var.modality == modal_full
     ]
     donor_counts = adata_cell_info.obs.groupby("sample_id", observed=True).size()
 
     min_cells = MIN_CELLS_RNA if modal_short == "rna" else MIN_CELLS_ATAC
-    low_count_samples = list(
-        donor_counts[donor_counts < min_cells].index.values
-    )
-    
+    low_count_samples = list(donor_counts[donor_counts < min_cells].index.values)
+
     # Mask donors with low cell counts
     # The index in pseudobulk is usually "{sample}_{celltype}"
     ct_low_count_ids = [f"{x}_{ct}" for x in low_count_samples]
@@ -159,7 +150,7 @@ def process_modality(
             "ignore", message="Some cells have zero counts", category=UserWarning
         )
         sc.pp.normalize_total(ct_modal_data, target_sum=TARGET_SUM_NORM)
-    
+
     sc.pp.log1p(ct_modal_data)
 
     # Convert to DataFrame
@@ -168,7 +159,9 @@ def process_modality(
     df_modal.index = df_modal.index.str.replace(f"_{ct}", "")
 
     # Save
-    out_file = output_dir / f"{project_name}.{ct.replace(' ', '_')}.{modal_short}.parquet"
+    out_file = (
+        output_dir / f"{project_name}.{ct.replace(' ', '_')}.{modal_short}.parquet"
+    )
     df_modal.to_parquet(out_file)
     logger.info(f"Saved {out_file} (Shape: {df_modal.shape})")
 
@@ -189,10 +182,8 @@ def main():
 
     # 2. Pseudobulk Aggregation
     logger.info("Aggregating data by sample_id and cell_label...")
-    pb_adata = sc.get.aggregate(
-        adata_raw, by=["sample_id", "cell_label"], func="sum"
-    )
-    
+    pb_adata = sc.get.aggregate(adata_raw, by=["sample_id", "cell_label"], func="sum")
+
     if debug:
         peek_anndata(pb_adata, "Pseudobulked AnnData", debug)
 
@@ -218,3 +209,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
