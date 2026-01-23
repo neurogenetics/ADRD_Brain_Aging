@@ -28,7 +28,9 @@ Single-nuclei atlas of aging in the entorhinal cortex using RNA and ATAC 10X mul
 13. Transfer RNA cell-type annotation labels to the ATAC cells; predict_celltypes_from_multivi.ipynb
 ## Analysis
 1. Identify gene expression and chromatin accessibility features associated with age per broad cell-type and cluster specfic cell-type
-    - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.ipynb
+    - Convert the single-cell data to pseudobulk (mean) values for each broad and cluster specific cell-type for both GEX and ATAC data; pseudobulk_convert.py
+    - Format covariate tables for use with data prep and regression analysis; format_covariates.py
+    - Prepare the pseudobulk data for analysis by analysing and removing non-target variable variance; prep_pb_data.py
     - Regression analysis between quantified features (expression and accessibility) and age; pseudobulk_regression_analysis.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
     - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between feature quantification and age; post_pseudobulk_regression.ipynb
     - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
