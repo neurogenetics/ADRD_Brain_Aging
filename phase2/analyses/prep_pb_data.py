@@ -60,6 +60,9 @@ def main():
 
     modality = "rna"
     cell_type = "Microglia"
+    counts_term = f"{cell_type}_counts"
+    if modality == "atac":
+        probs_term = f"{cell_type}_probs"
 
     # read the covariate file
     covars_file = info_dir / f"{args.project}.covariates.{modality}.csv"
@@ -73,6 +76,9 @@ def main():
         print(covars_df.ph.describe())
         print(covars_df.smoker.describe())
         print(covars_df.bmi.describe())
+        print(covars_df[counts_term].describe())
+        if modality == "atac":
+            print(covars_df[probs_term].describe())
         print(covars_df.info())
 
     # load the quantified data
@@ -81,7 +87,18 @@ def main():
     peek_dataframe(quants_df, f"loaded the quantified data file: {data_file}", debug)
 
     # check if age, exogenous variable, is correlated with any ouf the covariate terms
-    covariate_terms = ["sex", "ancestry", "pmi", "ph", "smoker", "bmi", "pool"]
+    covariate_terms = [
+        "sex",
+        "ancestry",
+        "pmi",
+        "ph",
+        "smoker",
+        "bmi",
+        "pool",
+        counts_term,
+    ]
+    if modality == "atac":
+        covariate_terms.append(probs_term)
     covar_term_formula = " + ".join(covariate_terms)
     this_formula = f"age ~ {covar_term_formula}"
     logger.info(
@@ -96,46 +113,84 @@ def main():
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
     # perform variance partition of known covariates
+    # Create a temporary dataframe for modeling to avoid modifying the main data_df
+    # and to ensure statsmodels doesn't fail due to NaN alignment issues.
+    # model_cols = ["CHURC1", "sex", "pool", "pmi", "ph"]
+    model_cols = covariate_terms + ["CHURC1"]
+    fit_df = data_df[model_cols].dropna()
+    fit_df["dummy_group"] = 1
+
     # Fit the Linear Mixed Model
-    # "expression ~ 1" means we are modeling the intercept (mean)
-    # "groups" defines the random effect (e.g., individual)
-    # variancePartition fits multiple random effects; statsmodels handles this via 'vc_formula'
+    # Continuous variables are modeled as Fixed Effects (main formula).
+    # Categorical variables are modeled as Random Effects (vc_formula).
+    # This mimics variancePartition behavior more accurately.
+    
+    # Continuous variables for fixed effects
+    fixed_effects = ["pmi", "ph", counts_term]
+    # "ancestry" and "smoker" are categorical but sometimes treated as fixed if levels are few; 
+    # however, variancePartition often treats batches/individuals as random.
+    # Based on your previous code, ancestry/smoker were in vc_formula (random).
+    # If they are categorical, keep them in vc_formula. If they are numeric/continuous, move here.
+    # Assuming standard covariates:
+    # - pmi, ph, counts: Continuous -> Fixed
+    # - sex, pool, ancestry, smoker: Categorical -> Random
+    
+    fixed_formula = "CHURC1 ~ " + " + ".join(fixed_effects)
+    
+    # Categorical variables for random effects
+    vc_formula = {
+        "sex": "0 + C(sex)",
+        "pool": "0 + C(pool)",
+        "ancestry": "0 + C(ancestry)",
+        "smoker": "0 + C(smoker)",
+    }
+
     model = smf.mixedlm(
-        "CHURC1 ~ 1",
-        data=data_df,
-        groups=data_df.index,
-        vc_formula={
-            "sex": "0 + C(sex)",
-            "pool": "0 + C(pool)",
-            "pmi": "0 + pmi",
-            "ph": "0 + ph",
-            # "ancestry": "0 + C(ancestry)",
-            # "smoker": "0 + smoker",
-        },
+        fixed_formula,
+        data=fit_df,
+        groups="dummy_group",
+        re_formula="0", # No random intercept for the dummy group itself
+        vc_formula=vc_formula,
     )
     result = model.fit()
     logger.info(result.summary())
-    # 2. EXTRACT VARIANCE COMPONENTS (Robust method)
-    # Get the raw variance components array
-    var_components = result.vcomp
-    # Try to get the names of these components from the model
-    # (These usually correspond to the order in the array: Group var, then vc_formula vars)
+
+    # --- CALCULATE VARIANCE FRACTIONS ---
+    
+    # 1. Random Effects Variance (from vc_formula)
+    # result.vcomp contains the variance estimates for the random terms as an array
+    # We need to map these to their names
     try:
-        # This attribute exists in most statsmodels versions to label the VC params
         vc_names = result.model.exog_vc.names
     except AttributeError:
-        # Fallback if names can't be found automatically
-        vc_names = [f"Var_Comp_{i}" for i in range(len(var_components))]
-    # 3. Create a labeled Pandas Series
-    # This ensures 'fractions' is a Series, not a raw numpy array
-    fractions = Series(var_components, index=vc_names)
-    # 4. Calculate Fractions
+        vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+        
+    random_vars = dict(zip(vc_names, result.vcomp))
+    
+    # 2. Fixed Effects Variance
+    # For each fixed effect X with coefficient beta, Var_explained = Var(beta * X)
+    # Since beta is a constant, Var(beta * X) = beta^2 * Var(X)
+    fixed_vars = {}
+    for term in fixed_effects:
+        # Get coefficient (params) for the term
+        if term in result.params:
+            beta = result.params[term]
+            # Calculate variance of the predictor in the data
+            var_x = fit_df[term].var()
+            fixed_vars[term] = (beta ** 2) * var_x
+            
+    # 3. Residual Variance
     residual_var = result.scale
-    total_var = fractions.sum() + residual_var
-    fractions = fractions / total_var
-    # Now this will work because 'fractions' is a pandas Series, not a numpy array
-    fractions["Residual"] = residual_var / total_var
-    print(fractions)
+    
+    # 4. Combine and Normalize
+    all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
+    all_variances_series = Series(all_variances)
+    
+    total_var = all_variances_series.sum()
+    fractions = all_variances_series / total_var
+    
+    print("\n--- Variance Fractions ---")
+    print(fractions.sort_values(ascending=False))
 
 
 if __name__ == "__main__":
