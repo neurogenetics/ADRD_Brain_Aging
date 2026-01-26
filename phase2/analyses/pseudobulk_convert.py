@@ -7,6 +7,8 @@ from pathlib import Path
 import scanpy as sc
 from anndata import AnnData
 from tabulate import tabulate
+from pandas import DataFrame
+import numpy as np
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +20,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROJECT = "aging_phase2"
 DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 VAR_MODAL_DICT = {"Gene Expression": "rna", "Peaks": "atac"}
+MODAL_TYPES_DICT = {
+    "rna": ["expression", "paired"],
+    "atac": ["accessibility", "paired"],
+}
 
 # Thresholds
 MIN_CELLS_RNA = 10
@@ -98,10 +104,11 @@ def load_and_prep_data(
 
 def process_modality(
     ct_data: AnnData,
-    raw_full: AnnData,
+    raw_full_obs: DataFrame,
     ct: str,
     modal_full: str,
     modal_short: str,
+    modal_types: list,
     output_dir: Path,
     project_name: str,
 ):
@@ -114,10 +121,10 @@ def process_modality(
         return
 
     # Calculate donor-level cell counts to identify low-count samples
-    adata_cell_info = raw_full[
-        raw_full.obs.cell_label == ct, raw_full.var.modality == modal_full
+    adata_cell_info = raw_full_obs.loc[
+        (raw_full_obs.cell_label == ct) & (raw_full_obs.modality.isin(modal_types))
     ]
-    donor_counts = adata_cell_info.obs.groupby("sample_id", observed=True).size()
+    donor_counts = adata_cell_info.groupby("sample_id", observed=True).size()
 
     min_cells = MIN_CELLS_RNA if modal_short == "rna" else MIN_CELLS_ATAC
     low_count_samples = list(donor_counts[donor_counts < min_cells].index.values)
@@ -129,7 +136,7 @@ def process_modality(
 
     # Reset X to raw sums
     ct_modal_data.X = ct_modal_data.layers["sum"].copy()
-    ct_modal_data.X[donor_mask, :] = 0
+    ct_modal_data.X[donor_mask, :] = np.nan
 
     # Filter features
     min_cells_threshold = int(ct_modal_data.n_obs * MIN_CELLS_PROP)
@@ -198,10 +205,11 @@ def main():
         for modal_full, modal_short in VAR_MODAL_DICT.items():
             process_modality(
                 ct_data=ct_data,
-                raw_full=adata_raw,
+                raw_full_obs=adata_raw.obs,
                 ct=ct,
                 modal_full=modal_full,
                 modal_short=modal_short,
+                modal_types=MODAL_TYPES_DICT.get(modal_short),
                 output_dir=quants_dir,
                 project_name=args.project,
             )
@@ -209,4 +217,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
