@@ -68,7 +68,7 @@ def main():
     # the final annotated anndata object should have all neccesary covariate information needed
     # load the annotated anndata
     adata = read_h5ad(anndata_file)
-    peek_anndata(adata, "loaded annotated anndata from {anndata_file}", debug)
+    peek_anndata(adata, f"loaded annotated anndata from {anndata_file}", debug)
 
     # format sample covariates: sex, ancestry, age, (gex_pool or atac_pool), pmi, ph, smoker, bmi
     keep_terms = [
@@ -137,7 +137,7 @@ def main():
             cell_probs_df.columns.name = None
             cell_probs_df.index.name = None
             cell_probs_df.columns = [
-                f"{x.replace(' ', '_')}-probs" for x in cell_probs_df.columns
+                f"{x.replace(' ', '_')}_probs" for x in cell_probs_df.columns
             ]
             donor_counts = cell_info_obs.groupby(
                 ["cell_label", "sample_id"], observed=True
@@ -147,7 +147,7 @@ def main():
         donor_counts_df.columns.name = None
         donor_counts_df.index.name = None
         donor_counts_df.columns = [
-            f"{x.replace(' ', '_')}-counts" for x in donor_counts_df.columns
+            f"{x.replace(' ', '_')}_counts" for x in donor_counts_df.columns
         ]
         out_df = covars_df.drop(columns=["gex_pool", "atac_pool"])
         out_df = out_df.merge(
