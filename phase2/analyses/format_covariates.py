@@ -119,24 +119,45 @@ def main():
                 .groupby(["cell_label", "sample_id"], observed=True)
                 .size()
             )
+            cell_probs_df = None
         elif modality == "atac":
             covars_df["pool"] = covars_df.atac_pool
-
-            donor_counts = (
-                adata.obs.loc[adata.obs.modality.isin(["accessibility", "paired"])]
-                .groupby(["cell_label", "sample_id"], observed=True)
-                .size()
+            cell_info_obs = adata.obs.loc[
+                adata.obs.modality.isin(["accessibility", "paired"])
+            ].copy()
+            # for the atac modality add the label prediction probabilities
+            # the accessibility cells were predicted the paired were manual curation
+            cell_info_obs.loc[cell_info_obs.modality == "paired", "label_prob"] = 1
+            cell_label_probs = (
+                cell_info_obs.groupby(["cell_label", "sample_id"], observed=True)
+                .label_prob.mean()
+                .round(3)
             )
+            cell_probs_df = cell_label_probs.unstack(level=0)
+            cell_probs_df.columns.name = None
+            cell_probs_df.index.name = None
+            cell_probs_df.columns = [
+                f"{x.replace(' ', '_')}-probs" for x in cell_probs_df.columns
+            ]
+            donor_counts = cell_info_obs.groupby(
+                ["cell_label", "sample_id"], observed=True
+            ).size()
         # formatting the counts to columns to merge with the rest of the covariates
         donor_counts_df = donor_counts.unstack(level=0)
         donor_counts_df.columns.name = None
         donor_counts_df.index.name = None
-        donor_counts_df.columns = [x.replace(" ", "_") for x in donor_counts_df.columns]
+        donor_counts_df.columns = [
+            f"{x.replace(' ', '_')}-counts" for x in donor_counts_df.columns
+        ]
         out_df = covars_df.drop(columns=["gex_pool", "atac_pool"])
         out_df = out_df.merge(
             donor_counts_df, how="inner", left_index=True, right_index=True
         )
-        peek_dataframe(out_df, f"set pool covariate for {modality}", debug)
+        if cell_probs_df is not None:
+            out_df = out_df.merge(
+                cell_probs_df, how="inner", left_index=True, right_index=True
+            )
+        peek_dataframe(out_df, f"created covariates for {modality}", debug)
 
         # save the final covariate file
         out_file = info_dir / f"{args.project}.covariates.{modality}.csv"
