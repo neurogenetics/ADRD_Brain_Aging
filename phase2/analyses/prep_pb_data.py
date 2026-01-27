@@ -7,6 +7,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import concurrent.futures
 import warnings
+import variance_utils as ntvm
 
 # Configure logging
 logging.basicConfig(
@@ -35,6 +36,12 @@ def parse_args():
         default=DEFAULT_WRK_DIR,
         help="Base working directory.",
     )
+    parser.add_argument(
+        "--top-var-percent",
+        type=float,
+        default=0.15,
+        help="Percentage of top variable features to analyze (default: 0.15).",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -49,6 +56,31 @@ def peek_dataframe(df: DataFrame, message: str = None, verbose: bool = False):
         else:
             print(f"{df.index.values[0:15]=}")
             print(f"{df.columns.values[0:15]=}")
+
+
+def get_high_variance_features(df: DataFrame, top_percent: float = 0.15) -> list[str]:
+    """
+    Identifies the top n% features with the highest variance.
+    """
+    if top_percent <= 0 or top_percent > 1:
+        logger.warning(f"Invalid percentage {top_percent}, using all features.")
+        return df.columns.tolist()
+
+    # Calculate variance for each column (feature)
+    variances = df.var()
+    
+    # Sort descending
+    sorted_vars = variances.sort_values(ascending=False)
+    
+    # Determine cutoff
+    n_features = len(df.columns)
+    n_keep = int(n_features * top_percent)
+    n_keep = max(1, n_keep) # Ensure at least one
+    
+    top_features = sorted_vars.head(n_keep).index.tolist()
+    logger.info(f"Selected {len(top_features)} high-variance features (Top {top_percent*100:.1f}%)")
+    
+    return top_features
 
 
 def perform_variance_partition(
@@ -242,7 +274,7 @@ def main():
     if results:
         # Create DataFrame from results dictionary
         # Dictionary keys are index (genes), values are Series (columns)
-        variance_fractions_df = DataFrame.from_dict(results, orient="index")
+        variance_fractions_df = DataFrame.from_dict(results, orient="index").round(4)
 
         print("\n--- Variance Fractions (Head) ---")
         peek_dataframe(
