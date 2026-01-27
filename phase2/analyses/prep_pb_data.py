@@ -49,6 +49,72 @@ def peek_dataframe(df: DataFrame, message: str = None, verbose: bool = False):
             print(f"{df.columns.values[0:15]=}")
 
 
+def perform_variance_partition(
+    data_df: DataFrame,
+    feature_name: str,
+    fixed_effects: list[str],
+    random_effects: list[str],
+):
+    """
+    Mimics variancePartition by modeling continuous variables as fixed effects
+    and categorical variables as random effects using statsmodels MixedLM.
+    """
+    # Create model columns list
+    model_cols = fixed_effects + random_effects + [feature_name]
+
+    # Create a temporary dataframe for modeling
+    fit_df = data_df[model_cols].dropna()
+    fit_df["dummy_group"] = 1
+
+    # formula for fixed effects
+    fixed_formula = f"{feature_name} ~ " + " + ".join(fixed_effects)
+
+    # formula for random effects (categorical)
+    vc_formula = {effect: f"0 + C({effect})" for effect in random_effects}
+
+    # Fit the Linear Mixed Model
+    model = smf.mixedlm(
+        fixed_formula,
+        data=fit_df,
+        groups="dummy_group",
+        re_formula="0",  # No random intercept for the dummy group itself
+        vc_formula=vc_formula,
+    )
+    result = model.fit()
+    logger.info(result.summary())
+
+    # --- CALCULATE VARIANCE FRACTIONS ---
+
+    # 1. Random Effects Variance (from vc_formula)
+    try:
+        vc_names = result.model.exog_vc.names
+    except AttributeError:
+        vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+
+    random_vars = dict(zip(vc_names, result.vcomp))
+
+    # 2. Fixed Effects Variance
+    # Var_explained = beta^2 * Var(X)
+    fixed_vars = {}
+    for term in fixed_effects:
+        if term in result.params:
+            beta = result.params[term]
+            var_x = fit_df[term].var()
+            fixed_vars[term] = (beta**2) * var_x
+
+    # 3. Residual Variance
+    residual_var = result.scale
+
+    # 4. Combine and Normalize
+    all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
+    all_variances_series = Series(all_variances)
+
+    total_var = all_variances_series.sum()
+    fractions = all_variances_series / total_var
+
+    return fractions
+
+
 def main():
     args = parse_args()
     debug = args.debug
@@ -113,82 +179,16 @@ def main():
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
     # perform variance partition of known covariates
-    # Create a temporary dataframe for modeling to avoid modifying the main data_df
-    # and to ensure statsmodels doesn't fail due to NaN alignment issues.
-    # model_cols = ["CHURC1", "sex", "pool", "pmi", "ph"]
-    model_cols = covariate_terms + ["CHURC1"]
-    fit_df = data_df[model_cols].dropna()
-    fit_df["dummy_group"] = 1
-
-    # Fit the Linear Mixed Model
-    # Continuous variables are modeled as Fixed Effects (main formula).
-    # Categorical variables are modeled as Random Effects (vc_formula).
-    # This mimics variancePartition behavior more accurately.
-    
-    # Continuous variables for fixed effects
     fixed_effects = ["pmi", "ph", counts_term]
-    # "ancestry" and "smoker" are categorical but sometimes treated as fixed if levels are few; 
-    # however, variancePartition often treats batches/individuals as random.
-    # Based on your previous code, ancestry/smoker were in vc_formula (random).
-    # If they are categorical, keep them in vc_formula. If they are numeric/continuous, move here.
-    # Assuming standard covariates:
-    # - pmi, ph, counts: Continuous -> Fixed
-    # - sex, pool, ancestry, smoker: Categorical -> Random
-    
-    fixed_formula = "CHURC1 ~ " + " + ".join(fixed_effects)
-    
-    # Categorical variables for random effects
-    vc_formula = {
-        "sex": "0 + C(sex)",
-        "pool": "0 + C(pool)",
-        "ancestry": "0 + C(ancestry)",
-        "smoker": "0 + C(smoker)",
-    }
+    if modality == "atac":
+        fixed_effects.append(probs_term)
 
-    model = smf.mixedlm(
-        fixed_formula,
-        data=fit_df,
-        groups="dummy_group",
-        re_formula="0", # No random intercept for the dummy group itself
-        vc_formula=vc_formula,
+    random_effects = ["sex", "pool", "ancestry", "smoker"]
+
+    fractions = perform_variance_partition(
+        data_df, "CHURC1", fixed_effects, random_effects
     )
-    result = model.fit()
-    logger.info(result.summary())
 
-    # --- CALCULATE VARIANCE FRACTIONS ---
-    
-    # 1. Random Effects Variance (from vc_formula)
-    # result.vcomp contains the variance estimates for the random terms as an array
-    # We need to map these to their names
-    try:
-        vc_names = result.model.exog_vc.names
-    except AttributeError:
-        vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
-        
-    random_vars = dict(zip(vc_names, result.vcomp))
-    
-    # 2. Fixed Effects Variance
-    # For each fixed effect X with coefficient beta, Var_explained = Var(beta * X)
-    # Since beta is a constant, Var(beta * X) = beta^2 * Var(X)
-    fixed_vars = {}
-    for term in fixed_effects:
-        # Get coefficient (params) for the term
-        if term in result.params:
-            beta = result.params[term]
-            # Calculate variance of the predictor in the data
-            var_x = fit_df[term].var()
-            fixed_vars[term] = (beta ** 2) * var_x
-            
-    # 3. Residual Variance
-    residual_var = result.scale
-    
-    # 4. Combine and Normalize
-    all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
-    all_variances_series = Series(all_variances)
-    
-    total_var = all_variances_series.sum()
-    fractions = all_variances_series / total_var
-    
     print("\n--- Variance Fractions ---")
     print(fractions.sort_values(ascending=False))
 
