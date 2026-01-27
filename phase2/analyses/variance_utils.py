@@ -102,28 +102,50 @@ def generate_umap_covs_df(this_df, other_covs_df=None, rnd_digits=3, merge_input
     return umap_df
 
 
-def get_high_variance_features(df: DataFrame, top_percent: float = 0.15) -> list[str]:
+def get_high_variance_features(
+    df: DataFrame, top_percent: float = 0.15, min_presence_percent: float = 0.8
+) -> list[str]:
     """
-    Identifies the top n% features with the highest variance.
+    Identifies the top n% features with the highest variance,
+    filtering out features with high missingness.
+    
+    Args:
+        df: Input DataFrame (samples x features)
+        top_percent: Percentage of top features to keep (0.0 to 1.0)
+        min_presence_percent: Minimum fraction of non-null values required (0.0 to 1.0)
     """
     if top_percent <= 0 or top_percent > 1:
         logger.warning(f"Invalid percentage {top_percent}, using all features.")
         return df.columns.tolist()
 
-    # Calculate variance for each column (feature)
-    variances = df.var()
+    # 1. Filter based on missingness
+    # count() returns non-NA count
+    presence_fraction = df.count() / len(df)
+    valid_features = presence_fraction[presence_fraction >= min_presence_percent].index
+    
+    n_dropped = len(df.columns) - len(valid_features)
+    if n_dropped > 0:
+        logger.info(f"Dropped {n_dropped} features with < {min_presence_percent*100:.0f}% presence.")
+        
+    if len(valid_features) == 0:
+        logger.warning("No features met the presence criteria.")
+        return []
+
+    # 2. Calculate variance for valid features
+    # df.var() skips NaNs by default, which is what we want
+    variances = df[valid_features].var()
 
     # Sort descending
     sorted_vars = variances.sort_values(ascending=False)
 
     # Determine cutoff
-    n_features = len(df.columns)
+    n_features = len(valid_features)
     n_keep = int(n_features * top_percent)
     n_keep = max(1, n_keep)  # Ensure at least one
 
     top_features = sorted_vars.head(n_keep).index.tolist()
     logger.info(
-        f"Selected {len(top_features)} high-variance features (Top {top_percent*100:.1f}%)"
+        f"Selected {len(top_features)} high-variance features (Top {top_percent*100:.1f}% of {n_features} valid features)"
     )
 
     return top_features
