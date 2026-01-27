@@ -1,4 +1,4 @@
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from numpy import where, cumsum, arange
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.decomposition import PCA, FastICA, NMF
@@ -6,6 +6,15 @@ from kneed import KneeLocator
 from umap import UMAP
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+import statsmodels.formula.api as smf
+import logging
+import warnings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 # small function to perform the and minmax scale on a pandas dataframe
@@ -91,3 +100,110 @@ def generate_umap_covs_df(this_df, other_covs_df=None, rnd_digits=3, merge_input
         )
     print(f"The dimensions of the umap df and the traits are {umap_df.shape}")
     return umap_df
+
+
+def get_high_variance_features(df: DataFrame, top_percent: float = 0.15) -> list[str]:
+    """
+    Identifies the top n% features with the highest variance.
+    """
+    if top_percent <= 0 or top_percent > 1:
+        logger.warning(f"Invalid percentage {top_percent}, using all features.")
+        return df.columns.tolist()
+
+    # Calculate variance for each column (feature)
+    variances = df.var()
+
+    # Sort descending
+    sorted_vars = variances.sort_values(ascending=False)
+
+    # Determine cutoff
+    n_features = len(df.columns)
+    n_keep = int(n_features * top_percent)
+    n_keep = max(1, n_keep)  # Ensure at least one
+
+    top_features = sorted_vars.head(n_keep).index.tolist()
+    logger.info(
+        f"Selected {len(top_features)} high-variance features (Top {top_percent*100:.1f}%)"
+    )
+
+    return top_features
+
+
+def perform_variance_partition(
+    data_df: DataFrame,
+    feature_name: str,
+    fixed_effects: list[str],
+    random_effects: list[str],
+):
+    """
+    Mimics variancePartition by modeling continuous variables as fixed effects
+    and categorical variables as random effects using statsmodels MixedLM.
+    """
+    try:
+        # Create model columns list
+        model_cols = fixed_effects + random_effects + [feature_name]
+
+        # Create a temporary dataframe for modeling
+        fit_df = data_df[model_cols].dropna()
+        # Check if enough data remains
+        if fit_df.empty:
+            return None
+
+        fit_df["dummy_group"] = 1
+
+        # formula for fixed effects
+        # Patsy handles basic formula parsing
+        fixed_formula = f"Q('{feature_name}') ~ " + " + ".join(fixed_effects)
+
+        # formula for random effects (categorical)
+        vc_formula = {effect: f"0 + C({effect})" for effect in random_effects}
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # Fit the Linear Mixed Model
+            model = smf.mixedlm(
+                fixed_formula,
+                data=fit_df,
+                groups="dummy_group",
+                re_formula="0",  # No random intercept for the dummy group itself
+                vc_formula=vc_formula,
+            )
+            result = model.fit()
+            # logger.info(result.summary()) # Silenced for batch processing
+
+        # --- CALCULATE VARIANCE FRACTIONS ---
+
+        # 1. Random Effects Variance (from vc_formula)
+        try:
+            vc_names = result.model.exog_vc.names
+        except AttributeError:
+            vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+
+        random_vars = dict(zip(vc_names, result.vcomp))
+
+        # 2. Fixed Effects Variance
+        # Var_explained = beta^2 * Var(X)
+        fixed_vars = {}
+        for term in fixed_effects:
+            # Statsmodels params keys might differ slightly (e.g., Q('feature'))
+            # But the predictors are in fixed_effects
+            if term in result.params:
+                beta = result.params[term]
+                var_x = fit_df[term].var()
+                fixed_vars[term] = (beta**2) * var_x
+
+        # 3. Residual Variance
+        residual_var = result.scale
+
+        # 4. Combine and Normalize
+        all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
+        all_variances_series = Series(all_variances)
+
+        total_var = all_variances_series.sum()
+        fractions = all_variances_series / total_var
+
+        return (feature_name, fractions)
+
+    except Exception as e:
+        # logger.warning(f"Failed to process {feature_name}: {e}")
+        return None
