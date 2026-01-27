@@ -5,6 +5,8 @@ from pathlib import Path
 from pandas import DataFrame, read_csv, read_parquet, Series
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
+import concurrent.futures
+import warnings
 
 # Configure logging
 logging.basicConfig(
@@ -59,60 +61,74 @@ def perform_variance_partition(
     Mimics variancePartition by modeling continuous variables as fixed effects
     and categorical variables as random effects using statsmodels MixedLM.
     """
-    # Create model columns list
-    model_cols = fixed_effects + random_effects + [feature_name]
-
-    # Create a temporary dataframe for modeling
-    fit_df = data_df[model_cols].dropna()
-    fit_df["dummy_group"] = 1
-
-    # formula for fixed effects
-    fixed_formula = f"{feature_name} ~ " + " + ".join(fixed_effects)
-
-    # formula for random effects (categorical)
-    vc_formula = {effect: f"0 + C({effect})" for effect in random_effects}
-
-    # Fit the Linear Mixed Model
-    model = smf.mixedlm(
-        fixed_formula,
-        data=fit_df,
-        groups="dummy_group",
-        re_formula="0",  # No random intercept for the dummy group itself
-        vc_formula=vc_formula,
-    )
-    result = model.fit()
-    logger.info(result.summary())
-
-    # --- CALCULATE VARIANCE FRACTIONS ---
-
-    # 1. Random Effects Variance (from vc_formula)
     try:
-        vc_names = result.model.exog_vc.names
-    except AttributeError:
-        vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+        # Create model columns list
+        model_cols = fixed_effects + random_effects + [feature_name]
 
-    random_vars = dict(zip(vc_names, result.vcomp))
+        # Create a temporary dataframe for modeling
+        fit_df = data_df[model_cols].dropna()
+        # Check if enough data remains
+        if fit_df.empty:
+            return None
 
-    # 2. Fixed Effects Variance
-    # Var_explained = beta^2 * Var(X)
-    fixed_vars = {}
-    for term in fixed_effects:
-        if term in result.params:
-            beta = result.params[term]
-            var_x = fit_df[term].var()
-            fixed_vars[term] = (beta**2) * var_x
+        fit_df["dummy_group"] = 1
 
-    # 3. Residual Variance
-    residual_var = result.scale
+        # formula for fixed effects
+        # Patsy handles basic formula parsing
+        fixed_formula = f"Q('{feature_name}') ~ " + " + ".join(fixed_effects)
 
-    # 4. Combine and Normalize
-    all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
-    all_variances_series = Series(all_variances)
+        # formula for random effects (categorical)
+        vc_formula = {effect: f"0 + C({effect})" for effect in random_effects}
 
-    total_var = all_variances_series.sum()
-    fractions = all_variances_series / total_var
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # Fit the Linear Mixed Model
+            model = smf.mixedlm(
+                fixed_formula,
+                data=fit_df,
+                groups="dummy_group",
+                re_formula="0",  # No random intercept for the dummy group itself
+                vc_formula=vc_formula,
+            )
+            result = model.fit()
+            # logger.info(result.summary()) # Silenced for batch processing
 
-    return fractions
+        # --- CALCULATE VARIANCE FRACTIONS ---
+
+        # 1. Random Effects Variance (from vc_formula)
+        try:
+            vc_names = result.model.exog_vc.names
+        except AttributeError:
+            vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+
+        random_vars = dict(zip(vc_names, result.vcomp))
+
+        # 2. Fixed Effects Variance
+        # Var_explained = beta^2 * Var(X)
+        fixed_vars = {}
+        for term in fixed_effects:
+            # Statsmodels params keys might differ slightly (e.g., Q('feature'))
+            # But the predictors are in fixed_effects
+            if term in result.params:
+                beta = result.params[term]
+                var_x = fit_df[term].var()
+                fixed_vars[term] = (beta**2) * var_x
+
+        # 3. Residual Variance
+        residual_var = result.scale
+
+        # 4. Combine and Normalize
+        all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
+        all_variances_series = Series(all_variances)
+
+        total_var = all_variances_series.sum()
+        fractions = all_variances_series / total_var
+
+        return (feature_name, fractions)
+
+    except Exception as e:
+        logger.warning(f"Failed to process {feature_name}: {e}")
+        return None
 
 
 def main():
@@ -179,18 +195,65 @@ def main():
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
     # perform variance partition of known covariates
-    fixed_effects = ["pmi", "ph", counts_term]
+    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
     if modality == "atac":
         fixed_effects.append(probs_term)
 
     random_effects = ["sex", "pool", "ancestry", "smoker"]
 
-    fractions = perform_variance_partition(
-        data_df, "CHURC1", fixed_effects, random_effects
-    )
+    # Identify all features (genes) from quants_df
+    # Assuming columns in quants_df are the features
+    features = quants_df.columns.tolist()
+    logger.info(f"Starting variance partition for {len(features)} features...")
 
-    print("\n--- Variance Fractions ---")
-    print(fractions.sort_values(ascending=False))
+    results = {}
+
+    # Use ProcessPoolExecutor for parallel processing
+    # Using 'fork' context (default on Linux) makes passing data_df efficient (COW)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # Submit all tasks
+        future_to_feature = {
+            executor.submit(
+                perform_variance_partition,
+                data_df,
+                feature,
+                fixed_effects,
+                random_effects,
+            ): feature
+            for feature in features
+        }
+
+        # Process results as they complete
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_feature)):
+            feature = future_to_feature[future]
+            try:
+                res = future.result()
+                if res is not None:
+                    feat_name, fractions = res
+                    results[feat_name] = fractions
+            except Exception as exc:
+                logger.debug(f"{feature} generated an exception: {exc}")
+
+            if (i + 1) % 100 == 0:
+                print(f"Processed {i + 1}/{len(features)}...", end="\r")
+
+    print("\nProcessing complete.")
+
+    if results:
+        # Create DataFrame from results dictionary
+        # Dictionary keys are index (genes), values are Series (columns)
+        variance_fractions_df = DataFrame.from_dict(results, orient="index")
+
+        print("\n--- Variance Fractions (Head) ---")
+        peek_dataframe(
+            variance_fractions_df, "computed variance partition fractions", debug
+        )
+
+        # Optionally describe the overall distribution
+        print("\n--- Summary of Variance Explained ---")
+        print(variance_fractions_df.describe())
+    else:
+        logger.warning("No results were generated.")
 
 
 if __name__ == "__main__":
