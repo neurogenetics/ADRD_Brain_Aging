@@ -5,6 +5,14 @@ from sklearn.decomposition import PCA, FastICA, NMF
 from kneed import KneeLocator
 from umap import UMAP
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+
+
+# small function to perform the and minmax scale on a pandas dataframe
+def scale_dataframe(this_df: DataFrame):
+    scaledX = MinMaxScaler().fit_transform(this_df)
+    scaled_df = DataFrame(data=scaledX, columns=this_df.columns, index=this_df.index)
+    return scaled_df
 
 
 # function for dimensionality reduction analyses
