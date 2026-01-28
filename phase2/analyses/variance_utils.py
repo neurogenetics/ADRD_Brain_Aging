@@ -58,7 +58,9 @@ def generate_selected_model(
     return model, ret_df, r2, rmse
 
 
-def component_from_max_curve(scores, label: str = ["R2", "RMSE", "EVR"]) -> int:
+def component_from_max_curve(
+    scores, label: str = ["R2", "RMSE", "EVR"], save_prefix: str = None
+) -> int:
     if label == "R2" or label == "EVR":
         data_curve = "concave"
         data_direction = "increasing"
@@ -76,10 +78,15 @@ def component_from_max_curve(scores, label: str = ["R2", "RMSE", "EVR"]) -> int:
     num_comp = int(knee.knee)
     exp_value = scores[num_comp - 1]
     print(f"best number of components is {num_comp} at {label} of {exp_value}")
-    knee.plot_knee()
-    plt.show()
-    knee.plot_knee_normalized()
-    plt.show()
+
+    if save_prefix:
+        knee.plot_knee()
+        plt.savefig(f"{save_prefix}_{label}_knee.png")
+        plt.close()
+        knee.plot_knee_normalized()
+        plt.savefig(f"{save_prefix}_{label}_knee_normalized.png")
+        plt.close()
+
     return num_comp
 
 
