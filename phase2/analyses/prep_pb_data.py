@@ -110,6 +110,7 @@ def main():
     work_dir = Path(args.work_dir)
     quants_dir = work_dir / "quants"
     info_dir = work_dir / "sample_info"
+    figs_dir = work_dir / "figures"
 
     modality = args.modality
     cell_type = args.cell_type
@@ -161,7 +162,8 @@ def main():
     imputed_df = impute_missing_values(quants_df, variance_features, args.imputer_type)
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
-    pca_df = determine_pca_components(imputed_df, max_count, debug)
+    out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
+    pca_df = determine_pca_components(imputed_df, max_count, out_figure_path, debug)
 
     # now redo perform variance partition of known covariates plus PCA components
     # extend the fixed effect terms to include the PCAs
@@ -293,7 +295,7 @@ def impute_missing_values(
 
 
 def determine_pca_components(
-    imputed_df: DataFrame, max_count: int, debug: bool = False
+    imputed_df: DataFrame, max_count: int, out_prefix: str = None, debug: bool = False
 ) -> DataFrame:
     logger.info("Determine the number of PCA components to use")
     r2_values, rmse_values = iterate_model_component_counts(
@@ -304,8 +306,8 @@ def determine_pca_components(
         logger.debug(f"{rmse_values=}")
 
     # use max curvature of accuracy to select the number of components
-    knee_rmse = component_from_max_curve(rmse_values, "RMSE")
-    knee_r2 = component_from_max_curve(r2_values, "R2")
+    knee_rmse = component_from_max_curve(rmse_values, "RMSE", out_prefix)
+    knee_r2 = component_from_max_curve(r2_values, "R2", out_prefix)
     num_comp = max(knee_rmse, knee_r2)
     logger.info(f"N = {num_comp} components will be used")
 
