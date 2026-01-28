@@ -7,6 +7,9 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import concurrent.futures
 import warnings
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from variance_utils import (
     get_high_variance_features,
     perform_variance_partition,
@@ -43,6 +46,25 @@ def parse_args():
         help="Base working directory.",
     )
     parser.add_argument(
+        "--modality",
+        type=str,
+        default="rna",
+        help="Data modality (e.g., rna, atac).",
+    )
+    parser.add_argument(
+        "--cell-type",
+        type=str,
+        default="Microglia",
+        help="Cell type to analyze.",
+    )
+    parser.add_argument(
+        "--imputer-type",
+        type=str,
+        default="knn",
+        choices=["iterative", "knn", "simple"],
+        help="Type of imputation to use.",
+    )
+    parser.add_argument(
         "--top-var-percent",
         type=float,
         default=0.15,
@@ -55,13 +77,31 @@ def parse_args():
 def peek_dataframe(df: DataFrame, message: str = None, verbose: bool = False):
     if message:
         logger.info(message)
-    print(f"{df.shape=}")
+    logger.info(f"DataFrame shape: {df.shape}")
     if verbose:
         if len(df.columns) < 25:
             print(tabulate(df.head(), headers="keys", tablefmt="psql"))
         else:
             print(f"{df.index.values[0:15]=}")
             print(f"{df.columns.values[0:15]=}")
+
+
+def load_covariates(
+    info_dir: Path, project: str, modality: str, debug: bool = False
+) -> DataFrame:
+    covars_file = info_dir / f"{project}.covariates.{modality}.csv"
+    covars_df = read_csv(covars_file, index_col=0)
+    peek_dataframe(covars_df, f"Loaded covariates file: {covars_file}", debug)
+    return covars_df
+
+
+def load_quantified_data(
+    quants_dir: Path, project: str, cell_type: str, modality: str, debug: bool = False
+) -> DataFrame:
+    data_file = quants_dir / f"{project}.{cell_type}.{modality}.parquet"
+    quants_df = read_parquet(data_file)
+    peek_dataframe(quants_df, f"Loaded quantified data file: {data_file}", debug)
+    return quants_df
 
 
 def main():
@@ -73,59 +113,28 @@ def main():
     quants_dir = work_dir / "quants"
     info_dir = work_dir / "sample_info"
 
-    modality = "rna"
-    cell_type = "Microglia"
+    modality = args.modality
+    cell_type = args.cell_type
     counts_term = f"{cell_type}_counts"
-    if modality == "atac":
-        probs_term = f"{cell_type}_probs"
+    probs_term = f"{cell_type}_probs" if modality == "atac" else None
 
-    # read the covariate file
-    covars_file = info_dir / f"{args.project}.covariates.{modality}.csv"
-    covars_df = read_csv(covars_file, index_col=0)
-    peek_dataframe(covars_df, f"loaded the covariates file: {covars_file}", debug)
+    # Load data
+    covars_df = load_covariates(info_dir, args.project, modality, debug)
     if debug:
-        print(covars_df.sex.value_counts())
-        print(covars_df.ancestry.value_counts())
-        print(covars_df.pool.value_counts())
-        print(covars_df.pmi.describe())
-        print(covars_df.ph.describe())
-        print(covars_df.smoker.describe())
-        print(covars_df.bmi.describe())
-        print(covars_df[counts_term].describe())
-        if modality == "atac":
-            print(covars_df[probs_term].describe())
-        print(covars_df.info())
+        logger.debug(covars_df.describe())
+        logger.debug(covars_df.info())
 
-    # load the quantified data
-    data_file = quants_dir / f"{args.project}.{cell_type}.{modality}.parquet"
-    quants_df = read_parquet(data_file)
-    peek_dataframe(quants_df, f"loaded the quantified data file: {data_file}", debug)
-
-    # check if age, exogenous variable, is correlated with any ouf the covariate terms
-    covariate_terms = [
-        "sex",
-        "ancestry",
-        "pmi",
-        "ph",
-        "smoker",
-        "bmi",
-        "pool",
-        counts_term,
-    ]
-    if modality == "atac":
-        covariate_terms.append(probs_term)
-    covar_term_formula = " + ".join(covariate_terms)
-    this_formula = f"age ~ {covar_term_formula}"
-    logger.info(
-        f"--- check if age correlated with other covariates: {covar_term_formula} ---"
+    quants_df = load_quantified_data(
+        quants_dir, args.project, cell_type, modality, debug
     )
-    model = smf.glm(formula=this_formula, data=covars_df)
-    result = model.fit()
-    logger.info(result.summary())
 
     # combine the quantifications and covariates for modeling and cleaning of non-target variance
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
+
+    check_covariate_correlations(
+        covars_df, counts_term, probs_term, modality, "age"
+    )
 
     # perform variance partition of known covariates
     fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
@@ -134,43 +143,9 @@ def main():
 
     random_effects = ["sex", "pool", "ancestry", "smoker"]
 
-    # Identify all features (genes) from quants_df
-    # Assuming columns in quants_df are the features
-    features = quants_df.columns.tolist()
-    logger.info(f"Starting variance partition for {len(features)} features...")
-
-    results = {}
-
-    # Use ProcessPoolExecutor for parallel processing
-    # Using 'fork' context (default on Linux) makes passing data_df efficient (COW)
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        # Submit all tasks
-        future_to_feature = {
-            executor.submit(
-                perform_variance_partition,
-                data_df,
-                feature,
-                fixed_effects,
-                random_effects,
-            ): feature
-            for feature in features
-        }
-
-        # Process results as they complete
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_feature)):
-            feature = future_to_feature[future]
-            try:
-                res = future.result()
-                if res is not None:
-                    feat_name, fractions = res
-                    results[feat_name] = fractions
-            except Exception as exc:
-                logger.debug(f"{feature} generated an exception: {exc}")
-
-            if (i + 1) % 100 == 0:
-                print(f"Processed {i + 1}/{len(features)}...", end="\r")
-
-    print("\nProcessing complete.")
+    results = run_variance_partition(
+        data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
+    )
 
     if results:
         # Create DataFrame from results dictionary
@@ -191,22 +166,101 @@ def main():
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
     variance_features = get_high_variance_features(quants_df)
-    logger.info(f"found {len(variance_features)} high variance features")
+    logger.info(f"Found {len(variance_features)} high variance features")
     max_count = int(
         min(
             quants_df[variance_features].shape[0], quants_df[variance_features].shape[1]
         )
         / 2
     )
-    print(f"max count is {max_count}")
+    logger.info(f"Max components count: {max_count}")
 
     # deal with any missing values
-    logger.info("impute missing values")
-    from sklearn.experimental import enable_iterative_imputer
-    from sklearn.ensemble import ExtraTreesRegressor
-    from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
+    imputed_df = impute_missing_values(
+        quants_df, variance_features, args.imputer_type
+    )
+    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
-    imputer_type = "knn"
+    determine_pca_components(imputed_df, max_count, debug)
+
+
+def check_covariate_correlations(
+    covars_df: DataFrame,
+    counts_term: str,
+    probs_term: str,
+    modality: str,
+    target_var: str = "age",
+):
+    covariate_terms = [
+        "sex",
+        "ancestry",
+        "pmi",
+        "ph",
+        "smoker",
+        "bmi",
+        "pool",
+        counts_term,
+    ]
+    if modality == "atac":
+        covariate_terms.append(probs_term)
+    covar_term_formula = " + ".join(covariate_terms)
+    this_formula = f"{target_var} ~ {covar_term_formula}"
+    logger.info(
+        f"--- check if {target_var} correlated with other covariates: {covar_term_formula} ---"
+    )
+    try:
+        model = smf.glm(formula=this_formula, data=covars_df)
+        result = model.fit()
+        logger.info(result.summary())
+    except Exception as e:
+        logger.warning(f"Failed to check correlations: {e}")
+
+
+def run_variance_partition(
+    data_df: DataFrame,
+    features: list,
+    fixed_effects: list,
+    random_effects: list,
+    debug: bool = False,
+) -> dict:
+    logger.info(f"Starting variance partition for {len(features)} features...")
+    results = {}
+
+    # Use ProcessPoolExecutor for parallel processing
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        future_to_feature = {
+            executor.submit(
+                perform_variance_partition,
+                data_df,
+                feature,
+                fixed_effects,
+                random_effects,
+            ): feature
+            for feature in features
+        }
+
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_feature)):
+            feature = future_to_feature[future]
+            try:
+                res = future.result()
+                if res is not None:
+                    feat_name, fractions = res
+                    results[feat_name] = fractions
+            except Exception as exc:
+                logger.debug(f"{feature} generated an exception: {exc}")
+
+            if (i + 1) % 100 == 0:
+                print(f"Processed {i + 1}/{len(features)}...", end="\r")
+
+    print("\nProcessing complete.")
+    return results
+
+
+def impute_missing_values(
+    quants_df: DataFrame, variance_features: list, imputer_type: str
+) -> DataFrame:
+    logger.info("impute missing values")
+    
     if imputer_type == "iterative":
         logger.info("imputing with IterativeImputer")
         imputer = IterativeImputer(
@@ -222,17 +276,22 @@ def main():
     else:  # simple
         logger.info("imputing with SimpleImputer")
         imputer = SimpleImputer(strategy="mean")
+        
     imputer.set_output(transform="pandas")
     imputed_df = imputer.fit_transform(quants_df[variance_features])
-    print(imputed_df)
+    return imputed_df
 
-    logger.info("determine the number of PCA components to use")
+
+def determine_pca_components(
+    imputed_df: DataFrame, max_count: int, debug: bool = False
+) -> DataFrame:
+    logger.info("Determine the number of PCA components to use")
     r2_values, rmse_values = iterate_model_component_counts(
         max_count, imputed_df, "PCA"
     )
     if debug:
-        print(f"{r2_values=}")
-        print(f"{rmse_values=}")
+        logger.debug(f"{r2_values=}")
+        logger.debug(f"{rmse_values=}")
 
     # use max curvature of accuracy to select the number of components
     knee_rmse = component_from_max_curve(rmse_values, "RMSE")
@@ -241,12 +300,10 @@ def main():
     logger.info(f"N = {num_comp} components will be used")
 
     pca_mdl, pca_df, _, _ = generate_selected_model(num_comp, imputed_df, "PCA")
-    print(f"shape of pca_df is {pca_df.shape}")
+    logger.info(f"PCA DataFrame shape: {pca_df.shape}")
     peek_dataframe(pca_df, "PCA variance components generated", debug)
-    # plot_pca_pair(pca_df.merge(covs_df, how='left',
-    #                         left_index=True, right_index=True),
-    #             'PCA_0', 'PCA_1', hue_cov='pool_num')
-    print(pca_mdl.explained_variance_ratio_)
+    logger.info(f"Explained variance ratio: {pca_mdl.explained_variance_ratio_}")
+    return pca_df
 
 
 if __name__ == "__main__":
