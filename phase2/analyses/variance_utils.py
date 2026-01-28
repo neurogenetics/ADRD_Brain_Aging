@@ -229,5 +229,5 @@ def perform_variance_partition(
         return (feature_name, fractions)
 
     except Exception as e:
-        # logger.warning(f"Failed to process {feature_name}: {e}")
+        logger.warning(f"Failed to process {feature_name}: {e}")
         return None
