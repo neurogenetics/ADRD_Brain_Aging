@@ -10,6 +10,9 @@ import warnings
 from variance_utils import (
     get_high_variance_features,
     perform_variance_partition,
+    iterate_model_component_counts,
+    component_from_max_curve,
+    generate_selected_model,
 )
 
 # Configure logging
@@ -184,6 +187,66 @@ def main():
         print(variance_fractions_df.describe())
     else:
         logger.warning("No results were generated.")
+
+    # Generate latent features representing non-target variance base on high variance features
+    logger.info("Begin modeling non-target variance in the data")
+    variance_features = get_high_variance_features(quants_df)
+    logger.info(f"found {len(variance_features)} high variance features")
+    max_count = int(
+        min(
+            quants_df[variance_features].shape[0], quants_df[variance_features].shape[1]
+        )
+        / 2
+    )
+    print(f"max count is {max_count}")
+
+    # deal with any missing values
+    logger.info("impute missing values")
+    from sklearn.experimental import enable_iterative_imputer
+    from sklearn.ensemble import ExtraTreesRegressor
+    from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
+
+    imputer_type = "knn"
+    if imputer_type == "iterative":
+        logger.info("imputing with IterativeImputer")
+        imputer = IterativeImputer(
+            estimator=ExtraTreesRegressor(n_estimators=10, random_state=42, n_jobs=-1),
+            max_iter=20,
+            random_state=42,
+            n_nearest_features=20,
+        )
+    elif imputer_type == "knn":
+        neighbor_cnt = int(len(quants_df) ** 0.5)
+        logger.info(f"imputing with KNNImputer with n = {neighbor_cnt}")
+        imputer = KNNImputer(n_neighbors=neighbor_cnt)
+    else:  # simple
+        logger.info("imputing with SimpleImputer")
+        imputer = SimpleImputer(strategy="mean")
+    imputer.set_output(transform="pandas")
+    imputed_df = imputer.fit_transform(quants_df[variance_features])
+    print(imputed_df)
+
+    logger.info("determine the number of PCA components to use")
+    r2_values, rmse_values = iterate_model_component_counts(
+        max_count, imputed_df, "PCA"
+    )
+    if debug:
+        print(f"{r2_values=}")
+        print(f"{rmse_values=}")
+
+    # use max curvature of accuracy to select the number of components
+    knee_rmse = component_from_max_curve(rmse_values, "RMSE")
+    knee_r2 = component_from_max_curve(r2_values, "R2")
+    num_comp = max(knee_rmse, knee_r2)
+    logger.info(f"N = {num_comp} components will be used")
+
+    pca_mdl, pca_df, _, _ = generate_selected_model(num_comp, imputed_df, "PCA")
+    print(f"shape of pca_df is {pca_df.shape}")
+    peek_dataframe(pca_df, "PCA variance components generated", debug)
+    # plot_pca_pair(pca_df.merge(covs_df, how='left',
+    #                         left_index=True, right_index=True),
+    #             'PCA_0', 'PCA_1', hue_cov='pool_num')
+    print(pca_mdl.explained_variance_ratio_)
 
 
 if __name__ == "__main__":
