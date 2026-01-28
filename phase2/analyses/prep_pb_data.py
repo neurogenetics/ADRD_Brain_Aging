@@ -2,11 +2,9 @@ from tabulate import tabulate
 import logging
 import argparse
 from pathlib import Path
-from pandas import DataFrame, read_csv, read_parquet, Series
-import statsmodels.api as sm
+from pandas import DataFrame, read_csv, read_parquet
 import statsmodels.formula.api as smf
 import concurrent.futures
-import warnings
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
@@ -132,9 +130,7 @@ def main():
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
-    check_covariate_correlations(
-        covars_df, counts_term, probs_term, modality, "age"
-    )
+    check_covariate_correlations(covars_df, counts_term, probs_term, modality, "age")
 
     # perform variance partition of known covariates
     fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
@@ -147,21 +143,7 @@ def main():
         data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
 
-    if results:
-        # Create DataFrame from results dictionary
-        # Dictionary keys are index (genes), values are Series (columns)
-        variance_fractions_df = DataFrame.from_dict(results, orient="index").round(4)
-
-        print("\n--- Variance Fractions (Head) ---")
-        peek_dataframe(
-            variance_fractions_df, "computed variance partition fractions", debug
-        )
-
-        # Optionally describe the overall distribution
-        print("\n--- Summary of Variance Explained ---")
-        print(variance_fractions_df.describe())
-    else:
-        logger.warning("No results were generated.")
+    process_variance_results(results, debug)
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
@@ -176,12 +158,22 @@ def main():
     logger.info(f"Max components count: {max_count}")
 
     # deal with any missing values
-    imputed_df = impute_missing_values(
-        quants_df, variance_features, args.imputer_type
-    )
+    imputed_df = impute_missing_values(quants_df, variance_features, args.imputer_type)
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
-    determine_pca_components(imputed_df, max_count, debug)
+    pca_df = determine_pca_components(imputed_df, max_count, debug)
+
+    # now redo perform variance partition of known covariates plus PCA components
+    # extend the fixed effect terms to include the PCAs
+    fixed_effects.extend(pca_df.columns.tolist())
+    ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
+    peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
+
+    results = run_variance_partition(
+        ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
+    )
+
+    process_variance_results(results, debug)
 
 
 def check_covariate_correlations(
@@ -256,11 +248,29 @@ def run_variance_partition(
     return results
 
 
+def process_variance_results(results: dict, debug: bool = False):
+    if results:
+        # Create DataFrame from results dictionary
+        # Dictionary keys are index (genes), values are Series (columns)
+        variance_fractions_df = DataFrame.from_dict(results, orient="index").round(4)
+
+        print("\n--- Variance Fractions (Head) ---")
+        peek_dataframe(
+            variance_fractions_df, "computed variance partition fractions", debug
+        )
+
+        # Optionally describe the overall distribution
+        print("\n--- Summary of Variance Explained ---")
+        print(variance_fractions_df.describe())
+    else:
+        logger.warning("No results were generated.")
+
+
 def impute_missing_values(
     quants_df: DataFrame, variance_features: list, imputer_type: str
 ) -> DataFrame:
     logger.info("impute missing values")
-    
+
     if imputer_type == "iterative":
         logger.info("imputing with IterativeImputer")
         imputer = IterativeImputer(
@@ -276,7 +286,7 @@ def impute_missing_values(
     else:  # simple
         logger.info("imputing with SimpleImputer")
         imputer = SimpleImputer(strategy="mean")
-        
+
     imputer.set_output(transform="pandas")
     imputed_df = imputer.fit_transform(quants_df[variance_features])
     return imputed_df
