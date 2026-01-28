@@ -1,6 +1,6 @@
 from pandas import DataFrame, Series
 from numpy import where, cumsum, arange
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, root_mean_squared_error
 from sklearn.decomposition import PCA, FastICA, NMF
 from kneed import KneeLocator
 from umap import UMAP
@@ -49,7 +49,7 @@ def generate_selected_model(
     components = model.fit_transform(data_df)
     recon_input = model.inverse_transform(components)
     r2 = r2_score(y_true=data_df, y_pred=recon_input)
-    rmse = mean_squared_error(data_df, recon_input, squared=False)
+    rmse = root_mean_squared_error(data_df, recon_input)
     print(
         f"{model_type} with {n_comps} components accuracy is {r2:.4f}, RMSE is {rmse:.4f}"
     )
@@ -108,7 +108,7 @@ def get_high_variance_features(
     """
     Identifies the top n% features with the highest variance,
     filtering out features with high missingness.
-    
+
     Args:
         df: Input DataFrame (samples x features)
         top_percent: Percentage of top features to keep (0.0 to 1.0)
@@ -122,11 +122,13 @@ def get_high_variance_features(
     # count() returns non-NA count
     presence_fraction = df.count() / len(df)
     valid_features = presence_fraction[presence_fraction >= min_presence_percent].index
-    
+
     n_dropped = len(df.columns) - len(valid_features)
     if n_dropped > 0:
-        logger.info(f"Dropped {n_dropped} features with < {min_presence_percent*100:.0f}% presence.")
-        
+        logger.info(
+            f"Dropped {n_dropped} features with < {min_presence_percent * 100:.0f}% presence."
+        )
+
     if len(valid_features) == 0:
         logger.warning("No features met the presence criteria.")
         return []
@@ -145,7 +147,7 @@ def get_high_variance_features(
 
     top_features = sorted_vars.head(n_keep).index.tolist()
     logger.info(
-        f"Selected {len(top_features)} high-variance features (Top {top_percent*100:.1f}% of {n_features} valid features)"
+        f"Selected {len(top_features)} high-variance features (Top {top_percent * 100:.1f}% of {n_features} valid features)"
     )
 
     return top_features
