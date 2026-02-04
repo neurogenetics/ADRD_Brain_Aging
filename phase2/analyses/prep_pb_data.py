@@ -103,6 +103,19 @@ def load_quantified_data(
     return quants_df
 
 
+def load_autosomal_features(features_file: Path, debug: bool = False) -> list[str]:
+    logger.info(f"Loading features from {features_file}")
+    features_df = read_csv(features_file)
+    # Filter for autosomes (chr1-chr22)
+    autosomes = [f"chr{i}" for i in range(1, 23)]
+    autosomal_df = features_df[features_df["chr"].isin(autosomes)]
+    
+    if debug:
+        logger.debug(f"Autosomal features shape: {autosomal_df.shape}")
+        
+    return autosomal_df["gene"].tolist()
+
+
 def main():
     args = parse_args()
     debug = args.debug
@@ -149,7 +162,20 @@ def main():
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
-    variance_features = get_high_variance_features(quants_df, args.top_var_fraction)
+    
+    # Load features and filter for autosomes
+    features_file = quants_dir / f"{args.project}.features.csv"
+    if features_file.exists():
+        autosomal_genes = load_autosomal_features(features_file, debug)
+        # Ensure we only use features present in the data
+        # Note: quants_df features are in columns, samples in index
+        candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
+        logger.info(f"Restricted to {len(candidate_features)} autosomal features present in data")
+    else:
+        logger.warning(f"Features file not found at {features_file}. Using all features.")
+        candidate_features = quants_df.columns.tolist()
+
+    variance_features = get_high_variance_features(quants_df[candidate_features], args.top_var_fraction)
     logger.info(f"Found {len(variance_features)} high variance features")
     max_count = int(
         min(
