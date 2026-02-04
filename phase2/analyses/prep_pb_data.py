@@ -235,6 +235,12 @@ def main():
 
     process_variance_results(results, out_figure_path, "_final", debug, title_suffix)
 
+    # Save final covariates terms to a file
+    final_covariates = known_covariates + pca_df.columns.tolist()
+    final_covariates_file = info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
+    logger.info(f"Saving final covariates terms to {final_covariates_file}")
+    ext_data_df[final_covariates].to_csv(final_covariates_file)
+
 
 def check_covariate_correlations(
     covars_df: DataFrame,
