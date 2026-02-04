@@ -204,6 +204,8 @@ def main():
     ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
 
+    check_pca_correlations(ext_data_df, pca_df.columns.tolist(), "age")
+
     results = run_variance_partition(
         ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
@@ -241,6 +243,24 @@ def check_covariate_correlations(
         logger.info(result.summary())
     except Exception as e:
         logger.warning(f"Failed to check correlations: {e}")
+
+
+def check_pca_correlations(
+    data_df: DataFrame,
+    pca_cols: list[str],
+    target_var: str = "age"
+):
+    covar_term_formula = " + ".join(pca_cols)
+    this_formula = f"{target_var} ~ {covar_term_formula}"
+    logger.info(
+        f"--- check if {target_var} correlated with PCA components: {covar_term_formula} ---"
+    )
+    try:
+        model = smf.glm(formula=this_formula, data=data_df)
+        result = model.fit()
+        logger.info(result.summary())
+    except Exception as e:
+        logger.warning(f"Failed to check PCA correlations: {e}")
 
 
 def run_variance_partition(
