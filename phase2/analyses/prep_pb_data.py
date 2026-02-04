@@ -5,6 +5,8 @@ from pathlib import Path
 from pandas import DataFrame, read_csv, read_parquet
 import statsmodels.formula.api as smf
 import concurrent.futures
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
@@ -109,10 +111,10 @@ def load_autosomal_features(features_file: Path, debug: bool = False) -> list[st
     # Filter for autosomes (chr1-chr22)
     autosomes = [f"chr{i}" for i in range(1, 23)]
     autosomal_df = features_df[features_df["chr"].isin(autosomes)]
-
+    
     if debug:
         logger.debug(f"Autosomal features shape: {autosomal_df.shape}")
-
+        
     return autosomal_df["gene"].tolist()
 
 
@@ -162,7 +164,7 @@ def main():
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
-
+    
     # Load features and filter for autosomes
     features_file = quants_dir / f"{args.project}.features.csv"
     if features_file.exists():
@@ -170,18 +172,12 @@ def main():
         # Ensure we only use features present in the data
         # Note: quants_df features are in columns, samples in index
         candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
-        logger.info(
-            f"Restricted to {len(candidate_features)} autosomal features present in data"
-        )
+        logger.info(f"Restricted to {len(candidate_features)} autosomal features present in data")
     else:
-        logger.warning(
-            f"Features file not found at {features_file}. Using all features."
-        )
+        logger.warning(f"Features file not found at {features_file}. Using all features.")
         candidate_features = quants_df.columns.tolist()
 
-    variance_features = get_high_variance_features(
-        quants_df[candidate_features], args.top_var_fraction
-    )
+    variance_features = get_high_variance_features(quants_df[candidate_features], args.top_var_fraction)
     logger.info(f"Found {len(variance_features)} high variance features")
     max_count = int(
         min(
@@ -212,12 +208,8 @@ def main():
 
     check_pca_correlations(ext_data_df, pca_df.columns.tolist(), "age")
 
-    known_covariates = [
-        x for x in fixed_effects if x not in pca_df.columns
-    ] + random_effects
-    check_pcas_against_known_covariates(
-        ext_data_df, pca_df.columns.tolist(), known_covariates
-    )
+    known_covariates = [x for x in fixed_effects if x not in pca_df.columns] + random_effects
+    check_pcas_against_known_covariates(ext_data_df, pca_df.columns.tolist(), known_covariates, out_figure_path)
 
     results = run_variance_partition(
         ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
@@ -259,7 +251,9 @@ def check_covariate_correlations(
 
 
 def check_pca_correlations(
-    data_df: DataFrame, pca_cols: list[str], target_var: str = "age"
+    data_df: DataFrame,
+    pca_cols: list[str],
+    target_var: str = "age"
 ):
     covar_term_formula = " + ".join(pca_cols)
     this_formula = f"{target_var} ~ {covar_term_formula}"
@@ -275,9 +269,14 @@ def check_pca_correlations(
 
 
 def check_pcas_against_known_covariates(
-    data_df: DataFrame, pca_cols: list[str], covariate_cols: list[str]
+    data_df: DataFrame,
+    pca_cols: list[str],
+    covariate_cols: list[str],
+    out_prefix: Path = None
 ):
     covar_formula = " + ".join(covariate_cols)
+    z_scores_list = []
+
     for pca in pca_cols:
         this_formula = f"{pca} ~ {covar_formula}"
         logger.info(
@@ -287,8 +286,40 @@ def check_pcas_against_known_covariates(
             model = smf.glm(formula=this_formula, data=data_df)
             result = model.fit()
             logger.info(result.summary())
+            
+            # Extract z-scores (tvalues)
+            tvals = result.tvalues
+            tvals.name = pca
+            z_scores_list.append(tvals)
+
         except Exception as e:
             logger.warning(f"Failed to check association for {pca}: {e}")
+
+    if out_prefix and z_scores_list:
+        try:
+            # Create DataFrame: rows = PCAs, cols = Covariates
+            z_df = DataFrame(z_scores_list)
+            
+            # Drop Intercept if present
+            if "Intercept" in z_df.columns:
+                z_df = z_df.drop(columns=["Intercept"])
+            
+            # Create the heatmap
+            plt.figure(figsize=(12, 10))
+            # Use a diverging colormap, centering at 0
+            sns.heatmap(z_df, cmap="RdBu_r", center=0, annot=True, fmt=".2f")
+            plt.title("Z-statistics: PCA Components vs Known Covariates")
+            plt.xlabel("Known Covariates")
+            plt.ylabel("PCA Components")
+            plt.tight_layout()
+            
+            out_file = f"{out_prefix}_pca_covar_heatmap.png"
+            plt.savefig(out_file)
+            plt.close()
+            logger.info(f"Saved PCA-Covariate heatmap to {out_file}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate heatmap: {e}")
 
 
 def run_variance_partition(
