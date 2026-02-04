@@ -64,10 +64,10 @@ def parse_args():
         help="Type of imputation to use.",
     )
     parser.add_argument(
-        "--top-var-percent",
+        "--top-var-fraction",
         type=float,
         default=0.15,
-        help="Percentage of top variable features to analyze (default: 0.15).",
+        help="Fraction of top variable features to analyze (default: 0.15).",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
@@ -149,7 +149,7 @@ def main():
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
-    variance_features = get_high_variance_features(quants_df)
+    variance_features = get_high_variance_features(quants_df, args.top_var_fraction)
     logger.info(f"Found {len(variance_features)} high variance features")
     max_count = int(
         min(
