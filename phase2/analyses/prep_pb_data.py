@@ -8,6 +8,7 @@ import concurrent.futures
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
+from sklearn.linear_model import LinearRegression
 from variance_utils import (
     get_high_variance_features,
     perform_variance_partition,
@@ -162,6 +163,12 @@ def main():
     imputed_df = impute_missing_values(quants_df, variance_features, args.imputer_type)
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
+    # Regress out age effects before PCA
+    imputed_df = regress_out_covariate(imputed_df, covars_df, "age")
+    logger.info(
+        f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
+    )
+
     out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
     pca_df = determine_pca_components(imputed_df, max_count, out_figure_path, debug)
 
@@ -292,6 +299,27 @@ def impute_missing_values(
     imputer.set_output(transform="pandas")
     imputed_df = imputer.fit_transform(quants_df[variance_features])
     return imputed_df
+
+
+def regress_out_covariate(
+    data_df: DataFrame, covars_df: DataFrame, covariate: str
+) -> DataFrame:
+    logger.info(f"Regressing out {covariate} from features...")
+    # intersect indices
+    common_idx = data_df.index.intersection(covars_df.index)
+    if len(common_idx) < len(data_df):
+        logger.warning(
+            f"Dropping {len(data_df) - len(common_idx)} samples missing {covariate} info."
+        )
+
+    y = data_df.loc[common_idx]
+    x = covars_df.loc[common_idx, [covariate]]
+
+    reg = LinearRegression()
+    reg.fit(x, y)
+    residuals = y - reg.predict(x)
+
+    return residuals
 
 
 def determine_pca_components(
