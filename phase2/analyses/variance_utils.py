@@ -59,7 +59,7 @@ def generate_selected_model(
 
 
 def component_from_max_curve(
-    scores, label: str = ["R2", "RMSE", "EVR"], save_prefix: str = None
+    scores, label: str = ["R2", "RMSE", "EVR"], save_prefix: str = None, title_suffix: str = ""
 ) -> int:
     if label == "R2" or label == "EVR":
         data_curve = "concave"
@@ -87,9 +87,13 @@ def component_from_max_curve(
 
     if save_prefix:
         knee.plot_knee()
+        if title_suffix:
+            plt.title(f"{label} Knee: {title_suffix}")
         plt.savefig(f"{save_prefix}_{label}_knee.png")
         plt.close()
         knee.plot_knee_normalized()
+        if title_suffix:
+            plt.title(f"{label} Normalized Knee: {title_suffix}")
         plt.savefig(f"{save_prefix}_{label}_knee_normalized.png")
         plt.close()
 

@@ -111,10 +111,10 @@ def load_autosomal_features(features_file: Path, debug: bool = False) -> list[st
     # Filter for autosomes (chr1-chr22)
     autosomes = [f"chr{i}" for i in range(1, 23)]
     autosomal_df = features_df[features_df["chr"].isin(autosomes)]
-    
+
     if debug:
         logger.debug(f"Autosomal features shape: {autosomal_df.shape}")
-        
+
     return autosomal_df["gene"].tolist()
 
 
@@ -134,6 +134,7 @@ def main():
     probs_term = f"{cell_type}_probs" if modality == "atac" else None
 
     out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
+    title_suffix = f"{cell_type} ({modality.upper()})"
 
     # Load data
     covars_df = load_covariates(info_dir, args.project, modality, debug)
@@ -162,11 +163,11 @@ def main():
         data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
 
-    process_variance_results(results, out_figure_path, "_known", debug)
+    process_variance_results(results, out_figure_path, "_known", debug, title_suffix)
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
-    
+
     # Load features and filter for autosomes
     features_file = quants_dir / f"{args.project}.features.csv"
     if features_file.exists():
@@ -174,12 +175,18 @@ def main():
         # Ensure we only use features present in the data
         # Note: quants_df features are in columns, samples in index
         candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
-        logger.info(f"Restricted to {len(candidate_features)} autosomal features present in data")
+        logger.info(
+            f"Restricted to {len(candidate_features)} autosomal features present in data"
+        )
     else:
-        logger.warning(f"Features file not found at {features_file}. Using all features.")
+        logger.warning(
+            f"Features file not found at {features_file}. Using all features."
+        )
         candidate_features = quants_df.columns.tolist()
 
-    variance_features = get_high_variance_features(quants_df[candidate_features], args.top_var_fraction)
+    variance_features = get_high_variance_features(
+        quants_df[candidate_features], args.top_var_fraction
+    )
     logger.info(f"Found {len(variance_features)} high variance features")
     max_count = int(
         min(
@@ -199,7 +206,9 @@ def main():
         f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
     )
 
-    pca_df = determine_pca_components(imputed_df, max_count, out_figure_path, debug)
+    pca_df = determine_pca_components(
+        imputed_df, max_count, out_figure_path, debug, title_suffix
+    )
 
     # now redo perform variance partition of known covariates plus PCA components
     # extend the fixed effect terms to include the PCAs
@@ -209,14 +218,22 @@ def main():
 
     check_pca_correlations(ext_data_df, pca_df.columns.tolist(), "age")
 
-    known_covariates = [x for x in fixed_effects if x not in pca_df.columns] + random_effects
-    check_pcas_against_known_covariates(ext_data_df, pca_df.columns.tolist(), known_covariates, out_figure_path)
+    known_covariates = [
+        x for x in fixed_effects if x not in pca_df.columns
+    ] + random_effects
+    check_pcas_against_known_covariates(
+        ext_data_df,
+        pca_df.columns.tolist(),
+        known_covariates,
+        out_figure_path,
+        title_suffix,
+    )
 
     results = run_variance_partition(
         ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
 
-    process_variance_results(results, out_figure_path, "_final", debug)
+    process_variance_results(results, out_figure_path, "_final", debug, title_suffix)
 
 
 def check_covariate_correlations(
@@ -252,9 +269,7 @@ def check_covariate_correlations(
 
 
 def check_pca_correlations(
-    data_df: DataFrame,
-    pca_cols: list[str],
-    target_var: str = "age"
+    data_df: DataFrame, pca_cols: list[str], target_var: str = "age"
 ):
     covar_term_formula = " + ".join(pca_cols)
     this_formula = f"{target_var} ~ {covar_term_formula}"
@@ -273,7 +288,8 @@ def check_pcas_against_known_covariates(
     data_df: DataFrame,
     pca_cols: list[str],
     covariate_cols: list[str],
-    out_prefix: Path = None
+    out_prefix: Path = None,
+    plot_title_suffix: str = "",
 ):
     covar_formula = " + ".join(covariate_cols)
     z_scores_list = []
@@ -287,7 +303,7 @@ def check_pcas_against_known_covariates(
             model = smf.glm(formula=this_formula, data=data_df)
             result = model.fit()
             logger.info(result.summary())
-            
+
             # Extract z-scores (tvalues)
             tvals = result.tvalues
             tvals.name = pca
@@ -300,25 +316,27 @@ def check_pcas_against_known_covariates(
         try:
             # Create DataFrame: rows = PCAs, cols = Covariates
             z_df = DataFrame(z_scores_list)
-            
+
             # Drop Intercept if present
             if "Intercept" in z_df.columns:
                 z_df = z_df.drop(columns=["Intercept"])
-            
+
             # Create the heatmap
             plt.figure(figsize=(12, 10))
             # Use a diverging colormap, centering at 0
             sns.heatmap(z_df, cmap="RdBu_r", center=0, annot=True, fmt=".2f")
-            plt.title("Z-statistics: PCA Components vs Known Covariates")
+            plt.title(
+                f"Z-statistics: PCA Components vs Known Covariates\n{plot_title_suffix}"
+            )
             plt.xlabel("Known Covariates")
             plt.ylabel("PCA Components")
             plt.tight_layout()
-            
+
             out_file = f"{out_prefix}_pca_covar_heatmap.png"
             plt.savefig(out_file)
             plt.close()
             logger.info(f"Saved PCA-Covariate heatmap to {out_file}")
-            
+
         except Exception as e:
             logger.warning(f"Failed to generate heatmap: {e}")
 
@@ -367,7 +385,8 @@ def process_variance_results(
     results: dict,
     out_prefix: Path = None,
     suffix: str = "",
-    debug: bool = False
+    debug: bool = False,
+    plot_title_suffix: str = "",
 ):
     if results:
         # Create DataFrame from results dictionary
@@ -386,14 +405,18 @@ def process_variance_results(
         if out_prefix:
             try:
                 # Prepare data for plotting
-                plot_df = variance_fractions_df.melt(var_name="Component", value_name="Variance Fraction")
-                
+                plot_df = variance_fractions_df.melt(
+                    var_name="Component", value_name="Variance Fraction"
+                )
+
                 plt.figure(figsize=(12, 6))
                 sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction")
-                plt.xticks(rotation=45, ha='right')
-                plt.title(f"Variance Partitioning Results {suffix}")
+                plt.xticks(rotation=45, ha="right")
+                plt.title(
+                    f"Variance Partitioning Results {suffix}\n{plot_title_suffix}"
+                )
                 plt.tight_layout()
-                
+
                 out_file = f"{out_prefix}_variance_boxen{suffix}.png"
                 plt.savefig(out_file)
                 plt.close()
@@ -452,7 +475,11 @@ def regress_out_covariate(
 
 
 def determine_pca_components(
-    imputed_df: DataFrame, max_count: int, out_prefix: str = None, debug: bool = False
+    imputed_df: DataFrame,
+    max_count: int,
+    out_prefix: str = None,
+    debug: bool = False,
+    title_suffix: str = "",
 ) -> DataFrame:
     logger.info("Determine the number of PCA components to use")
     r2_values, rmse_values = iterate_model_component_counts(
@@ -463,8 +490,8 @@ def determine_pca_components(
         logger.debug(f"{rmse_values=}")
 
     # use max curvature of accuracy to select the number of components
-    knee_rmse = component_from_max_curve(rmse_values, "RMSE", out_prefix)
-    knee_r2 = component_from_max_curve(r2_values, "R2", out_prefix)
+    knee_rmse = component_from_max_curve(rmse_values, "RMSE", out_prefix, title_suffix)
+    knee_r2 = component_from_max_curve(r2_values, "R2", out_prefix, title_suffix)
     num_comp = max(knee_rmse, knee_r2)
     logger.info(f"N = {num_comp} components will be used")
 
