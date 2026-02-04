@@ -74,8 +74,14 @@ def component_from_max_curve(
         curve=data_curve,
         direction=data_direction,
     )
-    print(f"best curve at knee {knee.knee}")
-    num_comp = int(knee.knee)
+
+    if knee.knee is None:
+        logger.warning(f"KneeLocator could not find a knee for {label}. Defaulting to max components ({len(scores)}).")
+        num_comp = len(scores)
+    else:
+        print(f"best curve at knee {knee.knee}")
+        num_comp = int(knee.knee)
+
     exp_value = scores[num_comp - 1]
     print(f"best number of components is {num_comp} at {label} of {exp_value}")
 
