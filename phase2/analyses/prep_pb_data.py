@@ -133,6 +133,8 @@ def main():
     counts_term = f"{cell_type}_counts"
     probs_term = f"{cell_type}_probs" if modality == "atac" else None
 
+    out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
+
     # Load data
     covars_df = load_covariates(info_dir, args.project, modality, debug)
     if debug:
@@ -160,7 +162,7 @@ def main():
         data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
 
-    process_variance_results(results, debug)
+    process_variance_results(results, out_figure_path, "_known", debug)
 
     # Generate latent features representing non-target variance base on high variance features
     logger.info("Begin modeling non-target variance in the data")
@@ -197,7 +199,6 @@ def main():
         f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
     )
 
-    out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
     pca_df = determine_pca_components(imputed_df, max_count, out_figure_path, debug)
 
     # now redo perform variance partition of known covariates plus PCA components
@@ -215,7 +216,7 @@ def main():
         ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
     )
 
-    process_variance_results(results, debug)
+    process_variance_results(results, out_figure_path, "_final", debug)
 
 
 def check_covariate_correlations(
@@ -362,7 +363,12 @@ def run_variance_partition(
     return results
 
 
-def process_variance_results(results: dict, debug: bool = False):
+def process_variance_results(
+    results: dict,
+    out_prefix: Path = None,
+    suffix: str = "",
+    debug: bool = False
+):
     if results:
         # Create DataFrame from results dictionary
         # Dictionary keys are index (genes), values are Series (columns)
@@ -376,6 +382,24 @@ def process_variance_results(results: dict, debug: bool = False):
         # Optionally describe the overall distribution
         print("\n--- Summary of Variance Explained ---")
         print(variance_fractions_df.describe())
+
+        if out_prefix:
+            try:
+                # Prepare data for plotting
+                plot_df = variance_fractions_df.melt(var_name="Component", value_name="Variance Fraction")
+                
+                plt.figure(figsize=(12, 6))
+                sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction")
+                plt.xticks(rotation=45, ha='right')
+                plt.title(f"Variance Partitioning Results {suffix}")
+                plt.tight_layout()
+                
+                out_file = f"{out_prefix}_variance_boxen{suffix}.png"
+                plt.savefig(out_file)
+                plt.close()
+                logger.info(f"Saved variance boxen plot to {out_file}")
+            except Exception as e:
+                logger.warning(f"Failed to create variance plot: {e}")
     else:
         logger.warning("No results were generated.")
 
