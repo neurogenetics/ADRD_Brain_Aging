@@ -17,6 +17,7 @@ from variance_utils import (
     iterate_model_component_counts,
     component_from_max_curve,
     generate_selected_model,
+    scale_dataframe,
 )
 
 # Configure logging
@@ -274,6 +275,9 @@ def main():
     residuals_df = DataFrame(
         Y_orig - reg.predict(X), index=Y_orig.index, columns=Y_orig.columns
     )
+
+    # scale the dataframe features
+    residuals_df = scale_dataframe(residuals_df)
 
     residuals_file = (
         quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
