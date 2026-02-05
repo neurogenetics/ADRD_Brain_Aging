@@ -21,9 +21,6 @@ from variance_utils import (
 )
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -457,6 +454,19 @@ def determine_pca_components(
 def main():
     args = parse_args()
     debug = args.debug
+
+    # Configure logging to file
+    log_filename = f"{args.cell_type}_{args.modality}_prep_pb.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler()
+        ],
+        force=True
+    )
+    logger.info(f"Logging configured. Writing to {log_filename}")
 
     # Setup directories
     work_dir = Path(args.work_dir)
