@@ -177,132 +177,6 @@ def generate_latent_features(
     return pca_df
 
 
-def main():
-    args = parse_args()
-    debug = args.debug
-
-    # Setup directories
-    work_dir = Path(args.work_dir)
-    quants_dir = work_dir / "quants"
-    info_dir = work_dir / "sample_info"
-    figs_dir = work_dir / "figures"
-    
-    # Ensure directories exist
-    figs_dir.mkdir(parents=True, exist_ok=True)
-
-    modality = args.modality
-    cell_type = args.cell_type
-    counts_term = f"{cell_type}_counts"
-    probs_term = f"{cell_type}_probs" if modality == "atac" else None
-
-    out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
-    title_suffix = f"{cell_type} ({modality.upper()})"
-
-    # Load data
-    covars_df = load_covariates(info_dir, args.project, modality, debug)
-    if debug:
-        logger.debug(covars_df.describe())
-        logger.debug(covars_df.info())
-
-    quants_df = load_quantified_data(
-        quants_dir, args.project, cell_type, modality, debug
-    )
-
-    # combine the quantifications and covariates for modeling and cleaning of non-target variance
-    data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
-    peek_dataframe(data_df, "merged the covariates and quantifications", debug)
-
-    # Define covariates for checking
-    check_covariates = [
-        "sex", "ancestry", "pmi", "ph", "smoker", "bmi", "pool", counts_term
-    ]
-    if modality == "atac":
-        check_covariates.append(probs_term)
-
-    check_correlations(covars_df, "age", check_covariates)
-
-    # perform variance partition of known covariates
-    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
-    if modality == "atac":
-        fixed_effects.append(probs_term)
-
-    random_effects = ["sex", "pool", "ancestry", "smoker"]
-
-    results = run_variance_partition(
-        data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
-    )
-
-    process_variance_results(results, out_figure_path, "_known", debug, title_suffix)
-
-    # Generate latent features representing non-target variance base on high variance features
-    pca_df = generate_latent_features(
-        quants_df,
-        covars_df,
-        args.project,
-        quants_dir,
-        out_figure_path,
-        title_suffix,
-        args.top_var_fraction,
-        args.imputer_type,
-        debug
-    )
-
-    # now redo perform variance partition of known covariates plus PCA components
-    # extend the fixed effect terms to include the PCAs
-    fixed_effects.extend(pca_df.columns.tolist())
-    ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
-    peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
-
-    check_correlations(
-        ext_data_df, "age", pca_df.columns.tolist(), "check age vs PCA correlations"
-    )
-
-    known_covariates = [
-        x for x in fixed_effects if x not in pca_df.columns
-    ] + random_effects
-    
-    check_pcas_against_known_covariates(
-        ext_data_df,
-        pca_df.columns.tolist(),
-        known_covariates,
-        out_figure_path,
-        title_suffix,
-    )
-
-    results = run_variance_partition(
-        ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
-    )
-
-    process_variance_results(results, out_figure_path, "_final", debug, title_suffix)
-
-    # Save final covariates terms to a file
-    final_covariates = known_covariates + pca_df.columns.tolist()
-    final_covariates_file = (
-        info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
-    )
-    logger.info(f"Saving final covariates terms to {final_covariates_file}")
-    ext_data_df[final_covariates].to_csv(final_covariates_file)
-
-    # Regress out non-target covariates (everything except age)
-    non_target_covariates = [x for x in final_covariates if x != "age"]
-    
-    # Features are the columns from the original quantified data
-    feature_cols = quants_df.columns.tolist()
-
-    residuals_df = perform_regression_correction(
-        ext_data_df[feature_cols], ext_data_df, non_target_covariates, debug
-    )
-
-    # scale the dataframe features
-    residuals_df = scale_dataframe(residuals_df)
-    
-    residuals_file = (
-        quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
-    )
-    logger.info(f"Saving residuals to {residuals_file}")
-    residuals_df.to_parquet(residuals_file)
-
-
 def fit_and_report_correlation(
     data_df: DataFrame,
     formula: str,
@@ -578,6 +452,132 @@ def determine_pca_components(
     peek_dataframe(pca_df, "PCA variance components generated", debug)
     logger.info(f"Explained variance ratio: {pca_mdl.explained_variance_ratio_}")
     return pca_df
+
+
+def main():
+    args = parse_args()
+    debug = args.debug
+
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    figs_dir = work_dir / "figures"
+    
+    # Ensure directories exist
+    figs_dir.mkdir(parents=True, exist_ok=True)
+
+    modality = args.modality
+    cell_type = args.cell_type
+    counts_term = f"{cell_type}_counts"
+    probs_term = f"{cell_type}_probs" if modality == "atac" else None
+
+    out_figure_path = figs_dir / f"{args.project}_{cell_type}_{modality}"
+    title_suffix = f"{cell_type} ({modality.upper()})"
+
+    # Load data
+    covars_df = load_covariates(info_dir, args.project, modality, debug)
+    if debug:
+        logger.debug(covars_df.describe())
+        logger.debug(covars_df.info())
+
+    quants_df = load_quantified_data(
+        quants_dir, args.project, cell_type, modality, debug
+    )
+
+    # combine the quantifications and covariates for modeling and cleaning of non-target variance
+    data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
+    peek_dataframe(data_df, "merged the covariates and quantifications", debug)
+
+    # Define covariates for checking
+    check_covariates = [
+        "sex", "ancestry", "pmi", "ph", "smoker", "bmi", "pool", counts_term
+    ]
+    if modality == "atac":
+        check_covariates.append(probs_term)
+
+    check_correlations(covars_df, "age", check_covariates)
+
+    # perform variance partition of known covariates
+    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
+    if modality == "atac":
+        fixed_effects.append(probs_term)
+
+    random_effects = ["sex", "pool", "ancestry", "smoker"]
+
+    results = run_variance_partition(
+        data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
+    )
+
+    process_variance_results(results, out_figure_path, "_known", debug, title_suffix)
+
+    # Generate latent features representing non-target variance base on high variance features
+    pca_df = generate_latent_features(
+        quants_df,
+        covars_df,
+        args.project,
+        quants_dir,
+        out_figure_path,
+        title_suffix,
+        args.top_var_fraction,
+        args.imputer_type,
+        debug
+    )
+
+    # now redo perform variance partition of known covariates plus PCA components
+    # extend the fixed effect terms to include the PCAs
+    fixed_effects.extend(pca_df.columns.tolist())
+    ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
+    peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
+
+    check_correlations(
+        ext_data_df, "age", pca_df.columns.tolist(), "check age vs PCA correlations"
+    )
+
+    known_covariates = [
+        x for x in fixed_effects if x not in pca_df.columns
+    ] + random_effects
+    
+    check_pcas_against_known_covariates(
+        ext_data_df,
+        pca_df.columns.tolist(),
+        known_covariates,
+        out_figure_path,
+        title_suffix,
+    )
+
+    results = run_variance_partition(
+        ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
+    )
+
+    process_variance_results(results, out_figure_path, "_final", debug, title_suffix)
+
+    # Save final covariates terms to a file
+    final_covariates = known_covariates + pca_df.columns.tolist()
+    final_covariates_file = (
+        info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
+    )
+    logger.info(f"Saving final covariates terms to {final_covariates_file}")
+    ext_data_df[final_covariates].to_csv(final_covariates_file)
+
+    # Regress out non-target covariates (everything except age)
+    non_target_covariates = [x for x in final_covariates if x != "age"]
+    
+    # Features are the columns from the original quantified data
+    feature_cols = quants_df.columns.tolist()
+
+    residuals_df = perform_regression_correction(
+        ext_data_df[feature_cols], ext_data_df, non_target_covariates, debug
+    )
+
+    # scale the dataframe features
+    residuals_df = scale_dataframe(residuals_df)
+    
+    residuals_file = (
+        quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
+    )
+    logger.info(f"Saving residuals to {residuals_file}")
+    residuals_df.to_parquet(residuals_file)
 
 
 if __name__ == "__main__":
