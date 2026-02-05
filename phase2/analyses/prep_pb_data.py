@@ -69,7 +69,7 @@ def parse_args():
     parser.add_argument(
         "--top-var-fraction",
         type=float,
-        default=0.15,
+        default=0.25,
         help="Fraction of top variable features to analyze (default: 0.15).",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
@@ -173,7 +173,7 @@ def generate_latent_features(
     pca_df = determine_pca_components(
         imputed_df, max_count, str(out_figure_path), debug, title_suffix
     )
-    
+
     return pca_df
 
 
@@ -388,7 +388,7 @@ def perform_regression_correction(
     Imputes missing values in Y for fitting, but returns residuals based on original Y (preserving NaNs).
     """
     logger.info(f"Regressing out {covariate_cols} from features...")
-    
+
     # Align indices
     common_idx = feature_df.index.intersection(covariate_df.index)
     if len(common_idx) < len(feature_df):
@@ -463,7 +463,7 @@ def main():
     quants_dir = work_dir / "quants"
     info_dir = work_dir / "sample_info"
     figs_dir = work_dir / "figures"
-    
+
     # Ensure directories exist
     figs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -491,7 +491,14 @@ def main():
 
     # Define covariates for checking
     check_covariates = [
-        "sex", "ancestry", "pmi", "ph", "smoker", "bmi", "pool", counts_term
+        "sex",
+        "ancestry",
+        "pmi",
+        "ph",
+        "smoker",
+        "bmi",
+        "pool",
+        counts_term,
     ]
     if modality == "atac":
         check_covariates.append(probs_term)
@@ -521,7 +528,7 @@ def main():
         title_suffix,
         args.top_var_fraction,
         args.imputer_type,
-        debug
+        debug,
     )
 
     # now redo perform variance partition of known covariates plus PCA components
@@ -537,7 +544,7 @@ def main():
     known_covariates = [
         x for x in fixed_effects if x not in pca_df.columns
     ] + random_effects
-    
+
     check_pcas_against_known_covariates(
         ext_data_df,
         pca_df.columns.tolist(),
@@ -564,11 +571,13 @@ def main():
     if probs_term:
         rename_map[probs_term] = "label_probs"
 
-    ext_data_df[final_covariates].rename(columns=rename_map).to_csv(final_covariates_file)
+    ext_data_df[final_covariates].rename(columns=rename_map).to_csv(
+        final_covariates_file
+    )
 
     # Regress out non-target covariates (everything except age)
     non_target_covariates = [x for x in final_covariates if x != "age"]
-    
+
     # Features are the columns from the original quantified data
     feature_cols = quants_df.columns.tolist()
 
@@ -578,7 +587,7 @@ def main():
 
     # scale the dataframe features
     residuals_df = scale_dataframe(residuals_df)
-    
+
     residuals_file = (
         quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
     )
