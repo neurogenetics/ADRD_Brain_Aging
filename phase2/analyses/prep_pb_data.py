@@ -558,7 +558,13 @@ def main():
         info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
     )
     logger.info(f"Saving final covariates terms to {final_covariates_file}")
-    ext_data_df[final_covariates].to_csv(final_covariates_file)
+
+    # Rename columns for standardizing terms in the output file
+    rename_map = {counts_term: "cell_counts"}
+    if probs_term:
+        rename_map[probs_term] = "label_probs"
+
+    ext_data_df[final_covariates].rename(columns=rename_map).to_csv(final_covariates_file)
 
     # Regress out non-target covariates (everything except age)
     non_target_covariates = [x for x in final_covariates if x != "age"]
