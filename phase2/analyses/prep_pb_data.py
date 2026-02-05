@@ -2,7 +2,7 @@ from tabulate import tabulate
 import logging
 import argparse
 from pathlib import Path
-from pandas import DataFrame, read_csv, read_parquet
+from pandas import DataFrame, read_csv, read_parquet, get_dummies
 import statsmodels.formula.api as smf
 import concurrent.futures
 import seaborn as sns
@@ -237,9 +237,49 @@ def main():
 
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
-    final_covariates_file = info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
+    final_covariates_file = (
+        info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
+    )
     logger.info(f"Saving final covariates terms to {final_covariates_file}")
     ext_data_df[final_covariates].to_csv(final_covariates_file)
+
+    # Regress out non-target covariates (everything except age)
+    non_target_covariates = [x for x in final_covariates if x != "age"]
+    logger.info(f"Regressing out non-target covariates: {non_target_covariates}")
+
+    # Features are the columns from the original quantified data
+    feature_cols = quants_df.columns.tolist()
+
+    # Use LinearRegression to regress out non-target covariates
+    # We must one-hot encode categorical variables for sklearn
+    X = get_dummies(ext_data_df[non_target_covariates], drop_first=True, dtype=float)
+    if debug:
+        peek_dataframe(X, "encoded covariates", debug)
+
+    Y_orig = ext_data_df[feature_cols]
+    Y_fit = Y_orig.copy()
+
+    # Check for missing values in Y
+    if Y_fit.isnull().values.any():
+        logger.warning(
+            "Found missing values in features. Imputing with mean for regression model fitting only."
+        )
+        Y_fit = Y_fit.fillna(Y_fit.mean())
+
+    reg = LinearRegression()
+    reg.fit(X, Y_fit)
+
+    # Calculate residuals using the original Y (preserving NaNs)
+    # Residual = Observed - Predicted
+    residuals_df = DataFrame(
+        Y_orig - reg.predict(X), index=Y_orig.index, columns=Y_orig.columns
+    )
+
+    residuals_file = (
+        quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
+    )
+    logger.info(f"Saving residuals to {residuals_file}")
+    residuals_df.to_parquet(residuals_file)
 
 
 def check_covariate_correlations(
