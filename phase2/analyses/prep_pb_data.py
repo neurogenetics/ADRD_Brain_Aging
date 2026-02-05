@@ -202,7 +202,7 @@ def main():
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
     # Regress out age effects before PCA
-    imputed_df = regress_out_covariate(imputed_df, covars_df, "age")
+    imputed_df = perform_regression_correction(imputed_df, covars_df, ["age"], debug)
     logger.info(
         f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
     )
@@ -246,39 +246,17 @@ def main():
 
     # Regress out non-target covariates (everything except age)
     non_target_covariates = [x for x in final_covariates if x != "age"]
-    logger.info(f"Regressing out non-target covariates: {non_target_covariates}")
-
+    
     # Features are the columns from the original quantified data
     feature_cols = quants_df.columns.tolist()
 
-    # Use LinearRegression to regress out non-target covariates
-    # We must one-hot encode categorical variables for sklearn
-    X = get_dummies(ext_data_df[non_target_covariates], drop_first=True, dtype=float)
-    if debug:
-        peek_dataframe(X, "encoded covariates", debug)
-
-    Y_orig = ext_data_df[feature_cols]
-    Y_fit = Y_orig.copy()
-
-    # Check for missing values in Y
-    if Y_fit.isnull().values.any():
-        logger.warning(
-            "Found missing values in features. Imputing with mean for regression model fitting only."
-        )
-        Y_fit = Y_fit.fillna(Y_fit.mean())
-
-    reg = LinearRegression()
-    reg.fit(X, Y_fit)
-
-    # Calculate residuals using the original Y (preserving NaNs)
-    # Residual = Observed - Predicted
-    residuals_df = DataFrame(
-        Y_orig - reg.predict(X), index=Y_orig.index, columns=Y_orig.columns
+    residuals_df = perform_regression_correction(
+        ext_data_df[feature_cols], ext_data_df, non_target_covariates, debug
     )
 
     # scale the dataframe features
     residuals_df = scale_dataframe(residuals_df)
-
+    
     residuals_file = (
         quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
     )
@@ -503,23 +481,52 @@ def impute_missing_values(
     return imputed_df
 
 
-def regress_out_covariate(
-    data_df: DataFrame, covars_df: DataFrame, covariate: str
+def perform_regression_correction(
+    feature_df: DataFrame,
+    covariate_df: DataFrame,
+    covariate_cols: list[str],
+    debug: bool = False,
 ) -> DataFrame:
-    logger.info(f"Regressing out {covariate} from features...")
-    # intersect indices
-    common_idx = data_df.index.intersection(covars_df.index)
-    if len(common_idx) < len(data_df):
+    """
+    Regresses out specified covariates from features.
+    Handles categorical covariates via one-hot encoding.
+    Imputes missing values in Y for fitting, but returns residuals based on original Y (preserving NaNs).
+    """
+    logger.info(f"Regressing out {covariate_cols} from features...")
+    
+    # Align indices
+    common_idx = feature_df.index.intersection(covariate_df.index)
+    if len(common_idx) < len(feature_df):
         logger.warning(
-            f"Dropping {len(data_df) - len(common_idx)} samples missing {covariate} info."
+            f"Regression: Dropping {len(feature_df) - len(common_idx)} samples not in covariates."
         )
 
-    y = data_df.loc[common_idx]
-    x = covars_df.loc[common_idx, [covariate]]
+    Y_orig = feature_df.loc[common_idx]
+    # Ensure covariates are a DataFrame
+    X_source = covariate_df.loc[common_idx, covariate_cols]
 
+    # One-hot encode covariates
+    X = get_dummies(X_source, drop_first=True, dtype=float)
+    if debug:
+        peek_dataframe(X, "Encoded covariates matrix")
+
+    # Handle missing in X (impute with mean)
+    if X.isnull().values.any():
+        logger.warning("Found missing values in covariates. Imputing with mean.")
+        X = X.fillna(X.mean())
+
+    # Handle missing in Y for fit (impute with mean)
+    Y_fit = Y_orig.copy()
+    if Y_fit.isnull().values.any():
+        logger.warning("Found missing values in features. Imputing with mean for fit.")
+        Y_fit = Y_fit.fillna(Y_fit.mean())
+
+    # Fit
     reg = LinearRegression()
-    reg.fit(x, y)
-    residuals = y - reg.predict(x)
+    reg.fit(X, Y_fit)
+
+    # Residuals = Original - Predicted
+    residuals = Y_orig - reg.predict(X)
 
     return residuals
 
