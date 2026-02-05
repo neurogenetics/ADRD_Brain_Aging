@@ -119,6 +119,64 @@ def load_autosomal_features(features_file: Path, debug: bool = False) -> list[st
     return autosomal_df["gene"].tolist()
 
 
+def generate_latent_features(
+    quants_df: DataFrame,
+    covars_df: DataFrame,
+    project: str,
+    quants_dir: Path,
+    out_figure_path: Path,
+    title_suffix: str,
+    top_var_fraction: float,
+    imputer_type: str,
+    debug: bool,
+) -> DataFrame:
+    logger.info("Begin modeling non-target variance in the data")
+
+    # Load features and filter for autosomes
+    features_file = quants_dir / f"{project}.features.csv"
+    if features_file.exists():
+        autosomal_genes = load_autosomal_features(features_file, debug)
+        # Ensure we only use features present in the data
+        # Note: quants_df features are in columns, samples in index
+        candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
+        logger.info(
+            f"Restricted to {len(candidate_features)} autosomal features present in data"
+        )
+    else:
+        logger.warning(
+            f"Features file not found at {features_file}. Using all features."
+        )
+        candidate_features = quants_df.columns.tolist()
+
+    variance_features = get_high_variance_features(
+        quants_df[candidate_features], top_var_fraction
+    )
+    logger.info(f"Found {len(variance_features)} high variance features")
+    max_count = int(
+        min(
+            quants_df[variance_features].shape[0], quants_df[variance_features].shape[1]
+        )
+        / 2
+    )
+    logger.info(f"Max components count: {max_count}")
+
+    # deal with any missing values
+    imputed_df = impute_missing_values(quants_df, variance_features, imputer_type)
+    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
+
+    # Regress out age effects before PCA
+    imputed_df = perform_regression_correction(imputed_df, covars_df, ["age"], debug)
+    logger.info(
+        f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
+    )
+
+    pca_df = determine_pca_components(
+        imputed_df, max_count, str(out_figure_path), debug, title_suffix
+    )
+    
+    return pca_df
+
+
 def main():
     args = parse_args()
     debug = args.debug
@@ -128,6 +186,9 @@ def main():
     quants_dir = work_dir / "quants"
     info_dir = work_dir / "sample_info"
     figs_dir = work_dir / "figures"
+    
+    # Ensure directories exist
+    figs_dir.mkdir(parents=True, exist_ok=True)
 
     modality = args.modality
     cell_type = args.cell_type
@@ -151,7 +212,14 @@ def main():
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
-    check_covariate_correlations(covars_df, counts_term, probs_term, modality, "age")
+    # Define covariates for checking
+    check_covariates = [
+        "sex", "ancestry", "pmi", "ph", "smoker", "bmi", "pool", counts_term
+    ]
+    if modality == "atac":
+        check_covariates.append(probs_term)
+
+    check_correlations(covars_df, "age", check_covariates)
 
     # perform variance partition of known covariates
     fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
@@ -167,48 +235,16 @@ def main():
     process_variance_results(results, out_figure_path, "_known", debug, title_suffix)
 
     # Generate latent features representing non-target variance base on high variance features
-    logger.info("Begin modeling non-target variance in the data")
-
-    # Load features and filter for autosomes
-    features_file = quants_dir / f"{args.project}.features.csv"
-    if features_file.exists():
-        autosomal_genes = load_autosomal_features(features_file, debug)
-        # Ensure we only use features present in the data
-        # Note: quants_df features are in columns, samples in index
-        candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
-        logger.info(
-            f"Restricted to {len(candidate_features)} autosomal features present in data"
-        )
-    else:
-        logger.warning(
-            f"Features file not found at {features_file}. Using all features."
-        )
-        candidate_features = quants_df.columns.tolist()
-
-    variance_features = get_high_variance_features(
-        quants_df[candidate_features], args.top_var_fraction
-    )
-    logger.info(f"Found {len(variance_features)} high variance features")
-    max_count = int(
-        min(
-            quants_df[variance_features].shape[0], quants_df[variance_features].shape[1]
-        )
-        / 2
-    )
-    logger.info(f"Max components count: {max_count}")
-
-    # deal with any missing values
-    imputed_df = impute_missing_values(quants_df, variance_features, args.imputer_type)
-    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
-
-    # Regress out age effects before PCA
-    imputed_df = perform_regression_correction(imputed_df, covars_df, ["age"], debug)
-    logger.info(
-        f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
-    )
-
-    pca_df = determine_pca_components(
-        imputed_df, max_count, out_figure_path, debug, title_suffix
+    pca_df = generate_latent_features(
+        quants_df,
+        covars_df,
+        args.project,
+        quants_dir,
+        out_figure_path,
+        title_suffix,
+        args.top_var_fraction,
+        args.imputer_type,
+        debug
     )
 
     # now redo perform variance partition of known covariates plus PCA components
@@ -217,11 +253,14 @@ def main():
     ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
 
-    check_pca_correlations(ext_data_df, pca_df.columns.tolist(), "age")
+    check_correlations(
+        ext_data_df, "age", pca_df.columns.tolist(), "check age vs PCA correlations"
+    )
 
     known_covariates = [
         x for x in fixed_effects if x not in pca_df.columns
     ] + random_effects
+    
     check_pcas_against_known_covariates(
         ext_data_df,
         pca_df.columns.tolist(),
@@ -264,52 +303,39 @@ def main():
     residuals_df.to_parquet(residuals_file)
 
 
-def check_covariate_correlations(
-    covars_df: DataFrame,
-    counts_term: str,
-    probs_term: str,
-    modality: str,
-    target_var: str = "age",
+def fit_and_report_correlation(
+    data_df: DataFrame,
+    formula: str,
+    description: str,
+    return_tvalues: bool = False,
 ):
-    covariate_terms = [
-        "sex",
-        "ancestry",
-        "pmi",
-        "ph",
-        "smoker",
-        "bmi",
-        "pool",
-        counts_term,
-    ]
-    if modality == "atac":
-        covariate_terms.append(probs_term)
-    covar_term_formula = " + ".join(covariate_terms)
-    this_formula = f"{target_var} ~ {covar_term_formula}"
-    logger.info(
-        f"--- check if {target_var} correlated with other covariates: {covar_term_formula} ---"
-    )
+    """
+    Helper to fit a GLM and report results.
+    """
+    logger.info(f"--- {description}: {formula} ---")
     try:
-        model = smf.glm(formula=this_formula, data=covars_df)
+        model = smf.glm(formula=formula, data=data_df)
         result = model.fit()
         logger.info(result.summary())
+        if return_tvalues:
+            return result.tvalues
     except Exception as e:
         logger.warning(f"Failed to check correlations: {e}")
+        return None
 
 
-def check_pca_correlations(
-    data_df: DataFrame, pca_cols: list[str], target_var: str = "age"
+def check_correlations(
+    data_df: DataFrame,
+    target_var: str,
+    covariates: list[str],
+    description: str = "check correlations",
 ):
-    covar_term_formula = " + ".join(pca_cols)
+    """
+    Checks if a target variable is correlated with a list of covariates.
+    """
+    covar_term_formula = " + ".join(covariates)
     this_formula = f"{target_var} ~ {covar_term_formula}"
-    logger.info(
-        f"--- check if {target_var} correlated with PCA components: {covar_term_formula} ---"
-    )
-    try:
-        model = smf.glm(formula=this_formula, data=data_df)
-        result = model.fit()
-        logger.info(result.summary())
-    except Exception as e:
-        logger.warning(f"Failed to check PCA correlations: {e}")
+    fit_and_report_correlation(data_df, this_formula, description)
 
 
 def check_pcas_against_known_covariates(
@@ -324,21 +350,16 @@ def check_pcas_against_known_covariates(
 
     for pca in pca_cols:
         this_formula = f"{pca} ~ {covar_formula}"
-        logger.info(
-            f"--- check if {pca} correlated with known covariates: {covar_formula} ---"
+        tvals = fit_and_report_correlation(
+            data_df,
+            this_formula,
+            f"check if {pca} correlated with known covariates",
+            return_tvalues=True,
         )
-        try:
-            model = smf.glm(formula=this_formula, data=data_df)
-            result = model.fit()
-            logger.info(result.summary())
 
-            # Extract z-scores (tvalues)
-            tvals = result.tvalues
+        if tvals is not None:
             tvals.name = pca
             z_scores_list.append(tvals)
-
-        except Exception as e:
-            logger.warning(f"Failed to check association for {pca}: {e}")
 
     if out_prefix and z_scores_list:
         try:
