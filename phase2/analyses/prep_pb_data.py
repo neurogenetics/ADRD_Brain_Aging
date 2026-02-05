@@ -70,7 +70,7 @@ def parse_args():
         "--top-var-fraction",
         type=float,
         default=0.25,
-        help="Fraction of top variable features to analyze (default: 0.15).",
+        help="Fraction of top variable features to analyze (default: 0.25).",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
