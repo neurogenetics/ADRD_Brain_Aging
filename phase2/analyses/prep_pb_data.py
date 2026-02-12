@@ -113,7 +113,8 @@ def load_autosomal_features(features_file: Path, debug: bool = False) -> list[st
 
 def generate_latent_features(
     quants_df: DataFrame,
-    covars_df: DataFrame,
+    covariates_df: DataFrame,
+    covariate_cols: list[str],
     project: str,
     quants_dir: Path,
     out_figure_path: Path,
@@ -156,10 +157,12 @@ def generate_latent_features(
     imputed_df = impute_missing_values(quants_df, variance_features, imputer_type)
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
-    # Regress out age effects before PCA
-    imputed_df = perform_regression_correction(imputed_df, covars_df, ["age"], debug)
+    # Regress out known covariates effects before PCA
+    imputed_df = perform_regression_correction(
+        imputed_df, covariates_df, covariate_cols, debug
+    )
     logger.info(
-        f"Residuals DataFrame shape after regressing out age: {imputed_df.shape}"
+        f"Residuals DataFrame shape after regressing out known covariates: {imputed_df.shape}"
     )
 
     pca_df = determine_pca_components(
@@ -318,25 +321,7 @@ def main():
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
-    # Generate latent features representing non-target variance base on high variance features
-    pca_df = generate_latent_features(
-        quants_df,
-        covars_df,
-        args.project,
-        quants_dir,
-        out_figure_path,
-        title_suffix,
-        args.top_var_fraction,
-        args.imputer_type,
-        debug,
-    )
-
-    # extend the fixed effect terms to include the PCAs
-    ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
-    peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
-
-    # Identify known covariates to save
-    # Note: We reconstruct the list of known covariates that we want to save in the final file.
+    # Identify known covariates to save and use for regression before PCA
     known_covariates = [
         "age",
         "bmi",
@@ -350,6 +335,24 @@ def main():
     ]
     if modality == "atac":
         known_covariates.append(probs_term)
+
+    # Generate latent features representing non-target variance base on high variance features
+    pca_df = generate_latent_features(
+        quants_df,
+        data_df,
+        known_covariates,
+        args.project,
+        quants_dir,
+        out_figure_path,
+        title_suffix,
+        args.top_var_fraction,
+        args.imputer_type,
+        debug,
+    )
+
+    # extend the fixed effect terms to include the PCAs
+    ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
+    peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
 
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
