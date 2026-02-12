@@ -59,7 +59,10 @@ def generate_selected_model(
 
 
 def component_from_max_curve(
-    scores, label: str = ["R2", "RMSE", "EVR"], save_prefix: str = None, title_suffix: str = ""
+    scores,
+    label: str = ["R2", "RMSE", "EVR"],
+    save_prefix: str = None,
+    title_suffix: str = "",
 ) -> int:
     if label == "R2" or label == "EVR":
         data_curve = "concave"
@@ -76,7 +79,9 @@ def component_from_max_curve(
     )
 
     if knee.knee is None:
-        logger.warning(f"KneeLocator could not find a knee for {label}. Defaulting to max components ({len(scores)}).")
+        logger.warning(
+            f"KneeLocator could not find a knee for {label}. Defaulting to max components ({len(scores)})."
+        )
         num_comp = len(scores)
     else:
         print(f"best curve at knee {knee.knee}")
@@ -120,7 +125,7 @@ def generate_umap_covs_df(this_df, other_covs_df=None, rnd_digits=3, merge_input
 
 
 def get_high_variance_features(
-    df: DataFrame, top_percent: float = 0.15, min_presence_percent: float = 0.8
+    df: DataFrame, top_percent: float = 0.15, min_presence_percent: float = 0.5
 ) -> list[str]:
     """
     Identifies the top n% features with the highest variance,

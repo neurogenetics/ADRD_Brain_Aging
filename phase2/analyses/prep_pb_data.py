@@ -3,17 +3,12 @@ import logging
 import argparse
 from pathlib import Path
 from pandas import DataFrame, read_csv, read_parquet, get_dummies
-import statsmodels.formula.api as smf
-import concurrent.futures
-import seaborn as sns
-import matplotlib.pyplot as plt
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.linear_model import LinearRegression
 from variance_utils import (
     get_high_variance_features,
-    perform_variance_partition,
     iterate_model_component_counts,
     component_from_max_curve,
     generate_selected_model,
@@ -174,179 +169,6 @@ def generate_latent_features(
     return pca_df
 
 
-def fit_and_report_correlation(
-    data_df: DataFrame,
-    formula: str,
-    description: str,
-    return_tvalues: bool = False,
-):
-    """
-    Helper to fit a GLM and report results.
-    """
-    logger.info(f"--- {description}: {formula} ---")
-    try:
-        model = smf.glm(formula=formula, data=data_df)
-        result = model.fit()
-        logger.info(result.summary())
-        if return_tvalues:
-            return result.tvalues
-    except Exception as e:
-        logger.warning(f"Failed to check correlations: {e}")
-        return None
-
-
-def check_correlations(
-    data_df: DataFrame,
-    target_var: str,
-    covariates: list[str],
-    description: str = "check correlations",
-):
-    """
-    Checks if a target variable is correlated with a list of covariates.
-    """
-    covar_term_formula = " + ".join(covariates)
-    this_formula = f"{target_var} ~ {covar_term_formula}"
-    fit_and_report_correlation(data_df, this_formula, description)
-
-
-def check_pcas_against_known_covariates(
-    data_df: DataFrame,
-    pca_cols: list[str],
-    covariate_cols: list[str],
-    out_prefix: Path = None,
-    plot_title_suffix: str = "",
-):
-    covar_formula = " + ".join(covariate_cols)
-    z_scores_list = []
-
-    for pca in pca_cols:
-        this_formula = f"{pca} ~ {covar_formula}"
-        tvals = fit_and_report_correlation(
-            data_df,
-            this_formula,
-            f"check if {pca} correlated with known covariates",
-            return_tvalues=True,
-        )
-
-        if tvals is not None:
-            tvals.name = pca
-            z_scores_list.append(tvals)
-
-    if out_prefix and z_scores_list:
-        try:
-            # Create DataFrame: rows = PCAs, cols = Covariates
-            z_df = DataFrame(z_scores_list)
-
-            # Drop Intercept if present
-            if "Intercept" in z_df.columns:
-                z_df = z_df.drop(columns=["Intercept"])
-
-            # Create the heatmap
-            plt.figure(figsize=(12, 10))
-            # Use a diverging colormap, centering at 0
-            sns.heatmap(z_df, cmap="RdBu_r", center=0, annot=True, fmt=".2f")
-            plt.title(
-                f"Z-statistics: PCA Components vs Known Covariates\n{plot_title_suffix}"
-            )
-            plt.xlabel("Known Covariates")
-            plt.ylabel("PCA Components")
-            plt.tight_layout()
-
-            out_file = f"{out_prefix}_pca_covar_heatmap.png"
-            plt.savefig(out_file)
-            plt.close()
-            logger.info(f"Saved PCA-Covariate heatmap to {out_file}")
-
-        except Exception as e:
-            logger.warning(f"Failed to generate heatmap: {e}")
-
-
-def run_variance_partition(
-    data_df: DataFrame,
-    features: list,
-    fixed_effects: list,
-    random_effects: list,
-    debug: bool = False,
-) -> dict:
-    logger.info(f"Starting variance partition for {len(features)} features...")
-    results = {}
-
-    # Use ProcessPoolExecutor for parallel processing
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        future_to_feature = {
-            executor.submit(
-                perform_variance_partition,
-                data_df,
-                feature,
-                fixed_effects,
-                random_effects,
-            ): feature
-            for feature in features
-        }
-
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_feature)):
-            feature = future_to_feature[future]
-            try:
-                res = future.result()
-                if res is not None:
-                    feat_name, fractions = res
-                    results[feat_name] = fractions
-            except Exception as exc:
-                logger.debug(f"{feature} generated an exception: {exc}")
-
-            if (i + 1) % 100 == 0:
-                print(f"Processed {i + 1}/{len(features)}...", end="\r")
-
-    print("\nProcessing complete.")
-    return results
-
-
-def process_variance_results(
-    results: dict,
-    out_prefix: Path = None,
-    suffix: str = "",
-    debug: bool = False,
-    plot_title_suffix: str = "",
-):
-    if results:
-        # Create DataFrame from results dictionary
-        # Dictionary keys are index (genes), values are Series (columns)
-        variance_fractions_df = DataFrame.from_dict(results, orient="index").round(4)
-
-        print("\n--- Variance Fractions (Head) ---")
-        peek_dataframe(
-            variance_fractions_df, "computed variance partition fractions", debug
-        )
-
-        # Optionally describe the overall distribution
-        print("\n--- Summary of Variance Explained ---")
-        print(variance_fractions_df.describe())
-
-        if out_prefix:
-            try:
-                # Prepare data for plotting
-                plot_df = variance_fractions_df.melt(
-                    var_name="Component", value_name="Variance Fraction"
-                )
-
-                plt.figure(figsize=(12, 6))
-                sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction")
-                plt.xticks(rotation=45, ha="right")
-                plt.title(
-                    f"Variance Partitioning Results {suffix}\n{plot_title_suffix}"
-                )
-                plt.tight_layout()
-
-                out_file = f"{out_prefix}_variance_boxen{suffix}.png"
-                plt.savefig(out_file)
-                plt.close()
-                logger.info(f"Saved variance boxen plot to {out_file}")
-            except Exception as e:
-                logger.warning(f"Failed to create variance plot: {e}")
-    else:
-        logger.warning("No results were generated.")
-
-
 def impute_missing_values(
     quants_df: DataFrame, variance_features: list, imputer_type: str
 ) -> DataFrame:
@@ -499,35 +321,6 @@ def main():
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
 
-    # Define covariates for checking
-    check_covariates = [
-        "sex",
-        "ancestry",
-        "pmi",
-        "ph",
-        "smoker",
-        "bmi",
-        "pool",
-        counts_term,
-    ]
-    if modality == "atac":
-        check_covariates.append(probs_term)
-
-    check_correlations(covars_df, "age", check_covariates)
-
-    # perform variance partition of known covariates
-    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
-    if modality == "atac":
-        fixed_effects.append(probs_term)
-
-    random_effects = ["sex", "pool", "ancestry", "smoker"]
-
-    results = run_variance_partition(
-        data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
-    )
-
-    process_variance_results(results, out_figure_path, "_known", debug, title_suffix)
-
     # Generate latent features representing non-target variance base on high variance features
     pca_df = generate_latent_features(
         quants_df,
@@ -541,34 +334,23 @@ def main():
         debug,
     )
 
-    # now redo perform variance partition of known covariates plus PCA components
     # extend the fixed effect terms to include the PCAs
-    fixed_effects.extend(pca_df.columns.tolist())
     ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
+    
+    # Identify known covariates to save
+    # Note: We reconstruct the list of known covariates that we want to save in the final file.
+    # From original script: fixed_effects + random_effects
+    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
+    if modality == "atac":
+        fixed_effects.append(probs_term)
 
-    check_correlations(
-        ext_data_df, "age", pca_df.columns.tolist(), "check age vs PCA correlations"
-    )
-
-    known_covariates = [
-        x for x in fixed_effects if x not in pca_df.columns
-    ] + random_effects
-
-    check_pcas_against_known_covariates(
-        ext_data_df,
-        pca_df.columns.tolist(),
-        known_covariates,
-        out_figure_path,
-        title_suffix,
-    )
-
-    results = run_variance_partition(
-        ext_data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug
-    )
-
-    process_variance_results(results, out_figure_path, "_final", debug, title_suffix)
-
+    random_effects = ["sex", "pool", "ancestry", "smoker"]
+    
+    # Reconstruct known_covariates list
+    # We want to keep all original covariates + PCA columns
+    known_covariates = fixed_effects + random_effects
+    
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
     final_covariates_file = (
