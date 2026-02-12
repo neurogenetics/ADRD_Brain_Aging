@@ -282,11 +282,8 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_filename),
-            logging.StreamHandler()
-        ],
-        force=True
+        handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
+        force=True,
     )
     logger.info(f"Logging configured. Writing to {log_filename}")
 
@@ -337,20 +334,23 @@ def main():
     # extend the fixed effect terms to include the PCAs
     ext_data_df = data_df.merge(pca_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(ext_data_df, "Extended Data DataFrame", debug)
-    
+
     # Identify known covariates to save
     # Note: We reconstruct the list of known covariates that we want to save in the final file.
-    # From original script: fixed_effects + random_effects
-    fixed_effects = ["age", "bmi", "pmi", "ph", counts_term]
+    known_covariates = [
+        "age",
+        "bmi",
+        "pmi",
+        "ph",
+        "sex",
+        "pool",
+        "ancestry",
+        "smoker",
+        counts_term,
+    ]
     if modality == "atac":
-        fixed_effects.append(probs_term)
+        known_covariates.append(probs_term)
 
-    random_effects = ["sex", "pool", "ancestry", "smoker"]
-    
-    # Reconstruct known_covariates list
-    # We want to keep all original covariates + PCA columns
-    known_covariates = fixed_effects + random_effects
-    
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
     final_covariates_file = (
