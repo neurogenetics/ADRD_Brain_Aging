@@ -5,7 +5,7 @@
     2. Latent Variable Discovery:
         * Identifies high-variance autosomal features.
         * Imputes missing values (KNN, Iterative, or Simple).
-        * Regresses out "age" effects to focus on non-age-related variance.
+        * Regresses out "age" and other known covariates (sex, ancestry, technical metrics) to focus on unknown variance.
         * Performs PCA on residuals and automatically selects the optimal number of components (using knee-point detection on R² and RMSE curves) to capture unobserved technical/biological noise.
     3. Covariate Correction: Regresses out all non-target covariates (known technical factors + latent PCA components), leaving only age-related variance in the final residuals.
     4. Scaling: Scales the residuals (MinMax) to a 0-1 range to standardize the data distribution.
