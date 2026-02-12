@@ -3,7 +3,6 @@ from pathlib import Path
 
 # Constants
 QUANTS_DIR = Path("/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/quants")
-OUTPUT_SCRIPT = Path("run_prep_pb_jobs.sh")
 PROJECT_PREFIX = "aging_phase2"
 
 
@@ -15,7 +14,8 @@ def generate_job_script():
     # Find all parquet files matching the pattern
     files = list(QUANTS_DIR.glob(f"{PROJECT_PREFIX}.*.*.parquet"))
 
-    commands_by_modality = {"rna": [], "atac": []}
+    prep_commands_by_modality = {"rna": [], "atac": []}
+    vp_commands_by_modality = {"rna": [], "atac": []}
 
     print(f"Scanning {QUANTS_DIR} for input files...")
 
@@ -36,37 +36,56 @@ def generate_job_script():
         cell_type_parts = parts[1:-2]
         cell_type = ".".join(cell_type_parts)
 
-        cmd = (
+        # Prep PB Data Command
+        prep_cmd = (
             f"uv run phase2/analyses/prep_pb_data.py "
             f"--modality {modality} "
             f"--cell-type {cell_type}"
         )
-        commands_by_modality[modality].append(cmd)
+        prep_commands_by_modality[modality].append(prep_cmd)
 
-    # Write separate scripts for each modality
-    for modality, commands in commands_by_modality.items():
+        # Variance Partition Command
+        vp_cmd = (
+            f"uv run phase2/analyses/run_variance_partition.py "
+            f"--modality {modality} "
+            f"--cell-type {cell_type}"
+        )
+        vp_commands_by_modality[modality].append(vp_cmd)
+
+    # Function to write and chmod script
+    def write_script(output_path, commands, description):
         if not commands:
-            continue
-
+            return
+        
         commands.sort()
-        output_script = Path(f"run_prep_pb_jobs_{modality}.sh")
-
-        with open(output_script, "w") as f:
+        with open(output_path, "w") as f:
             f.write("#!/bin/bash\n")
-            f.write(
-                f"# Generated script to run prep_pb_data.py for {modality} modality\n\n"
-            )
+            f.write(f"# Generated script to {description}\n\n")
 
             for cmd in commands:
                 f.write(f'echo "Running: {cmd}"\n')
                 f.write(f"{cmd}\n")
                 f.write("\n")
+        
+        st = output_path.stat()
+        output_path.chmod(st.st_mode | stat.S_IEXEC)
+        print(f"Successfully generated {output_path} with {len(commands)} commands.")
 
-        # Make the script executable
-        st = output_script.stat()
-        output_script.chmod(st.st_mode | stat.S_IEXEC)
+    # Write prep scripts
+    for modality, commands in prep_commands_by_modality.items():
+        write_script(
+            Path(f"run_prep_pb_jobs_{modality}.sh"),
+            commands,
+            f"run prep_pb_data.py for {modality} modality"
+        )
 
-        print(f"Successfully generated {output_script} with {len(commands)} commands.")
+    # Write variance partition scripts
+    for modality, commands in vp_commands_by_modality.items():
+        write_script(
+            Path(f"run_variance_partition_jobs_{modality}.sh"),
+            commands,
+            f"run run_variance_partition.py for {modality} modality"
+        )
 
 
 if __name__ == "__main__":
