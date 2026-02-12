@@ -13,11 +13,6 @@ from pandas import DataFrame as PandasDF
 from pandas import read_csv, read_parquet
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    force=True
-)
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -177,6 +172,19 @@ def regress_age(quants: PandasDF, covars: PandasDF, cell_name: str,
 def main():
     args = parse_args()
     debug = args.debug
+
+    # Configure logging to file and stdout
+    log_filename = f"{args.cell_type}_{args.modality}_{args.regression_type}_pseudobulk_regression.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler()
+        ],
+        force=True
+    )
+    logger.info(f"Logging configured. Writing to {log_filename}")
 
     # Setup directories
     work_dir = Path(args.work_dir)
