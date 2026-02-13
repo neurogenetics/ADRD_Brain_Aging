@@ -215,9 +215,16 @@ def main():
     logger.info(f"Total significant features (FDR < 0.05): {n_sig}")
 
     # 4. Summary Counts
+    total_counts = glm_results['tissue'].value_counts()
     sig_counts = glm_results.loc[glm_results['fdr_bh'] < 0.05]['tissue'].value_counts()
-    logger.info("Significant counts per cell type:")
-    print(sig_counts)
+    
+    summary_df = pd.DataFrame({'Total': total_counts, 'Significant': sig_counts})
+    summary_df['Significant'] = summary_df['Significant'].fillna(0).astype(int)
+    summary_df['Percentage'] = (summary_df['Significant'] / summary_df['Total'] * 100).round(2)
+    summary_df = summary_df.sort_values('Percentage', ascending=False)
+    
+    logger.info("Significant counts and percentages per cell type:")
+    print(summary_df)
     
     # 5. Save Results
     # Output filenames
