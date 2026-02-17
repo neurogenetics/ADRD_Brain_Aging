@@ -15,6 +15,7 @@ from variance_utils import (
     component_from_max_curve,
     generate_selected_model,
     scale_dataframe,
+    check_correlations,
 )
 
 # Configure logging
@@ -475,6 +476,9 @@ def main():
     ext_data_df[final_covariates_extended].rename(columns=rename_map).to_csv(
         final_covariates_file
     )
+
+    # check if any of the known or generated covariates are correlated with age
+    check_correlations(data_df, "age", [x for x in final_covariates if x != "age"])
 
     # Regress out non-target covariates (everything except age)
     # Using the original uncompressed covariates for regression as per typical workflow
