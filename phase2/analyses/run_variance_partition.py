@@ -7,7 +7,7 @@ import concurrent.futures
 import seaborn as sns
 import matplotlib.pyplot as plt
 from tabulate import tabulate
-from variance_utils import perform_variance_partition
+from variance_utils import perform_variance_partition, check_correlations, fit_and_report_correlation
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -98,41 +98,6 @@ def load_quantified_data(
     quants_df = read_parquet(data_file)
     peek_dataframe(quants_df, f"Loaded quantified data file: {data_file}", debug)
     return quants_df
-
-
-def fit_and_report_correlation(
-    data_df: DataFrame,
-    formula: str,
-    description: str,
-    return_tvalues: bool = False,
-):
-    """
-    Helper to fit a GLM and report results.
-    """
-    logger.info(f"--- {description}: {formula} ---")
-    try:
-        model = smf.glm(formula=formula, data=data_df)
-        result = model.fit()
-        logger.info(result.summary())
-        if return_tvalues:
-            return result.tvalues
-    except Exception as e:
-        logger.warning(f"Failed to check correlations: {e}")
-        return None
-
-
-def check_correlations(
-    data_df: DataFrame,
-    target_var: str,
-    covariates: list[str],
-    description: str = "check correlations",
-):
-    """
-    Checks if a target variable is correlated with a list of covariates.
-    """
-    covar_term_formula = " + ".join(covariates)
-    this_formula = f"{target_var} ~ {covar_term_formula}"
-    fit_and_report_correlation(data_df, this_formula, description)
 
 
 def check_pcas_against_known_covariates(

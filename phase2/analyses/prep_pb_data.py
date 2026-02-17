@@ -386,7 +386,9 @@ def main():
     covars_df = load_covariates(info_dir, args.project, modality, debug)
     # if any cell-type specific covariates have missingness fill them, zero; ie missing
     covars_df[counts_term] = covars_df[counts_term].fillna(0)
-    covars_df[probs_term] = covars_df[probs_term].fillna(0)
+    if modality == "atac":
+        covars_df[probs_term] = covars_df[probs_term].fillna(0)
+
     if debug:
         logger.debug(covars_df.describe())
         logger.debug(covars_df.info())
@@ -478,7 +480,11 @@ def main():
     )
 
     # check if any of the known or generated covariates are correlated with age
-    check_correlations(data_df, "age", [x for x in final_covariates if x != "age"])
+    check_correlations(
+        ext_data_df[final_covariates_extended],
+        "age",
+        [x for x in final_covariates_extended if x != "age"],
+    )
 
     # Regress out non-target covariates (everything except age)
     # Using the original uncompressed covariates for regression as per typical workflow
