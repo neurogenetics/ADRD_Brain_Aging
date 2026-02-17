@@ -383,6 +383,9 @@ def main():
 
     # Load data
     covars_df = load_covariates(info_dir, args.project, modality, debug)
+    # if any cell-type specific covariates have missingness fill them, zero; ie missing
+    covars_df[counts_term] = covars_df[counts_term].fillna(0)
+    covars_df[probs_term] = covars_df[probs_term].fillna(0)
     if debug:
         logger.debug(covars_df.describe())
         logger.debug(covars_df.info())
