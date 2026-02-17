@@ -7,6 +7,8 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.linear_model import LinearRegression
+import numpy as np
+from prince import FAMD
 from variance_utils import (
     get_high_variance_features,
     iterate_model_component_counts,
@@ -276,6 +278,78 @@ def determine_pca_components(
     return pca_df
 
 
+def generate_famd_features(
+    covariates_df: DataFrame,
+    covariate_cols: list[str],
+    out_prefix: str,
+    title_suffix: str,
+    n_components: int = 5,
+    debug: bool = False,
+) -> DataFrame:
+    """
+    Generate FAMD components from mixed continuous/categorical covariates.
+    Uses a fixed number of components (default 5) for covariate compression.
+    """
+    logger.info(f"Generating {n_components} FAMD features from final covariates...")
+
+    # Filter for specified covariates
+    famd_input = covariates_df[covariate_cols].copy()
+
+    if debug:
+        peek_dataframe(famd_input, "FAMD Input Data")
+
+    # Ensure n_components is valid given data dimensions
+    max_possible = min(famd_input.shape[0], famd_input.shape[1])
+    if n_components > max_possible:
+        logger.warning(
+            f"Requested {n_components} FAMD components, but data dimensions limit to {max_possible}. "
+            f"Using {max_possible}."
+        )
+        n_components = max_possible
+
+    try:
+        # Fit final model
+        logger.info(f"Running Prince FAMD with n_components={n_components}...")
+        final_famd = FAMD(
+            n_components=n_components,
+            n_iter=3,  # Increased iterations for stability
+            random_state=42,
+            engine="sklearn",
+            handle_unknown="error",
+        )
+        # FAMD return type can vary (DataFrame or array-like)
+        famd_coords = final_famd.fit_transform(famd_input)
+
+        # Extract underlying values if it's a DataFrame to avoid index misalignment
+        if isinstance(famd_coords, DataFrame):
+            famd_values = famd_coords.values
+        else:
+            famd_values = famd_coords
+
+        # Create DataFrame with proper index and column names
+        famd_df = DataFrame(
+            famd_values,
+            index=famd_input.index,
+            columns=[f"FAMD_{i}" for i in range(n_components)],
+        ).round(4)
+
+        if debug:
+            peek_dataframe(famd_df, "Generated FAMD Components", debug)
+
+        logger.info(
+            tabulate(final_famd.eigenvalues_summary, headers="keys", tablefmt="psql")
+        )
+        logger.info(
+            tabulate(final_famd.column_coordinates_, headers="keys", tablefmt="psql")
+        )
+
+        return famd_df
+
+    except Exception as e:
+        logger.warning(f"FAMD generation failed: {e}")
+        return DataFrame(index=famd_input.index)
+
+
 def main():
     args = parse_args()
     debug = args.debug
@@ -317,6 +391,13 @@ def main():
         quants_dir, args.project, cell_type, modality, debug
     )
 
+    # scale the dataframe features
+    scaled_df = scale_dataframe(quants_df)
+
+    scaled_file = quants_dir / f"{args.project}.{cell_type}.{modality}.scaled.parquet"
+    logger.info(f"Saving scaled data to {scaled_file}")
+    scaled_df.to_parquet(scaled_file)
+
     # combine the quantifications and covariates for modeling and cleaning of non-target variance
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
@@ -356,21 +437,45 @@ def main():
 
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
+
+    # Generate FAMD features from these final covariates (compressing them)
+    famd_df = generate_famd_features(
+        ext_data_df,
+        [x for x in final_covariates if x != "age"],
+        out_figure_path,
+        title_suffix,
+        debug=debug,
+    )
+
+    # Append FAMD features to the extended dataframe
+    ext_data_df = ext_data_df.merge(
+        famd_df, how="inner", left_index=True, right_index=True
+    )
+
+    # Update final covariates list to include FAMD components
+    # (keeping original covariates + FAMD components as requested,
+    # or should I replace? "appended to them" implies keeping both)
+    final_covariates_extended = final_covariates + famd_df.columns.tolist()
+
     final_covariates_file = (
         info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
     )
-    logger.info(f"Saving final covariates terms to {final_covariates_file}")
+    logger.info(
+        f"Saving final covariates terms (including FAMD) to {final_covariates_file}"
+    )
 
     # Rename columns for standardizing terms in the output file
     rename_map = {counts_term: "cell_counts"}
     if probs_term:
         rename_map[probs_term] = "label_probs"
 
-    ext_data_df[final_covariates].rename(columns=rename_map).to_csv(
+    ext_data_df[final_covariates_extended].rename(columns=rename_map).to_csv(
         final_covariates_file
     )
 
     # Regress out non-target covariates (everything except age)
+    # Using the original uncompressed covariates for regression as per typical workflow
+    # unless instructed otherwise. The FAMD is likely for downstream analysis.
     non_target_covariates = [x for x in final_covariates if x != "age"]
 
     # Features are the columns from the original quantified data
