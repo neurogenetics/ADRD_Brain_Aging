@@ -14,7 +14,6 @@ from variance_utils import (
     iterate_model_component_counts,
     component_from_max_curve,
     generate_selected_model,
-    scale_dataframe,
     check_correlations,
 )
 
@@ -397,13 +396,6 @@ def main():
         quants_dir, args.project, cell_type, modality, debug
     )
 
-    # scale the dataframe features
-    scaled_df = scale_dataframe(quants_df)
-
-    scaled_file = quants_dir / f"{args.project}.{cell_type}.{modality}.scaled.parquet"
-    logger.info(f"Saving scaled data to {scaled_file}")
-    scaled_df.to_parquet(scaled_file)
-
     # combine the quantifications and covariates for modeling and cleaning of non-target variance
     data_df = covars_df.merge(quants_df, how="inner", left_index=True, right_index=True)
     peek_dataframe(data_df, "merged the covariates and quantifications", debug)
@@ -427,7 +419,7 @@ def main():
     pca_df = generate_latent_features(
         quants_df,
         data_df,
-        known_covariates,
+        ["age"],
         args.project,
         quants_dir,
         out_figure_path,
@@ -497,9 +489,6 @@ def main():
     residuals_df = perform_regression_correction(
         ext_data_df[feature_cols], ext_data_df, non_target_covariates, debug
     )
-
-    # scale the dataframe features
-    residuals_df = scale_dataframe(residuals_df)
 
     residuals_file = (
         quants_dir / f"{args.project}.{cell_type}.{modality}.residuals.parquet"
