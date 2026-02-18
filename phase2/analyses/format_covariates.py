@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 from scanpy import read_h5ad
 from pandas import DataFrame
+from numpy import where
 
 # Configure logging
 logging.basicConfig(
@@ -93,7 +94,8 @@ def main():
         print(covars_df.bmi.describe())
 
     # fill any missing covariate terms
-    covars_df.loc[covars_df.smoker.isna(), "smoker"] = covars_df.smoker.mean().round(1)
+    covars_df.loc[covars_df.smoker.isna(), "smoker"] = 0
+    covars_df.smoker = where(covars_df.smoker == 1, "yes", "no")
     covars_df.loc[covars_df.bmi.isna(), "bmi"] = covars_df.bmi.mean().round(1)
     peek_dataframe(covars_df, "filled missing covariate values", debug)
 
