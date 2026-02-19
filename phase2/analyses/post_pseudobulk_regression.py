@@ -44,8 +44,8 @@ def parse_args():
     parser.add_argument(
         "--regression-type",
         type=str,
-        default="glm_tweedie",
-        choices=["glm", "glm_tweedie", "rlm"],
+        default="ols",
+        choices=["ols", "glm", "glm_tweedie", "rlm"],
         help="Regression method to use.",
     )
     parser.add_argument(
@@ -54,6 +54,13 @@ def parse_args():
         default=0.001,
         help="Minimum effect size for RLM significant results.",
     )
+    parser.add_argument(
+        "--no-volcano-per-celltype",
+        action="store_false",
+        dest="volcano_per_celltype",
+        help="Disable generation of volcano plots per cell-type.",
+    )
+    parser.set_defaults(volcano_per_celltype=True)
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -83,7 +90,7 @@ def volcano_plot(
     modality: str,
     regression_type: str,
     figures_dir: Path,
-    x_term: str = "coef",
+    x_term: str = "log2fc",
     y_term: str = "p-value",
     alpha: float = 0.05,
     adj_p_col: str = "fdr_bh",
@@ -123,7 +130,7 @@ def volcano_plot(
     )
 
     plt.title(title)
-    plt.xlabel("Effect Size (Coefficient)")
+    plt.xlabel("Effect Size (log2FC)")
     plt.ylabel("-log10(p-value)")
     plt.axhline(-np.log10(alpha), color="red", linestyle="--", alpha=0.5)
 
@@ -192,15 +199,7 @@ def main():
             # cell_type is in the filename, but also typically in the dataframe column 'tissue'
             # if the regression script put it there.
             if "tissue" not in df.columns:
-                # Extract from filename if missing: aging_phase2.rna.{cell_type}.glm_tweedie.age.csv
-                parts = file_path.name.split(".")
-                # Assuming project has 1 dot "aging_phase2" -> parts[0]
-                # Wait, project="aging_phase2" is one part.
-                # aging_phase2.rna.Microglia.glm_tweedie.age.csv
-                # parts: [0]=aging_phase2, [1]=rna, [2]=Microglia, [3]=glm_tweedie, [4]=age, [5]=csv
-                # This is risky if project has dots.
-                # Better to trust the 'tissue' column from pseudobulk_regression.py which we know we added.
-                pass
+                continue
 
             dfs.append(df)
         except Exception as e:
@@ -210,34 +209,36 @@ def main():
         logger.error("No valid dataframes loaded.")
         return
 
-    glm_results = concat(dfs, ignore_index=True)
-    logger.info(f"Aggregated results shape: {glm_results.shape}")
+    regression_results = concat(dfs, ignore_index=True)
+    logger.info(f"Aggregated results shape: {regression_results.shape}")
 
     if debug:
-        print(glm_results.head())
+        print(regression_results.head())
 
     # 2. FDR Correction
     logger.info("Computing BH FDR...")
-    glm_results["p-value"] = glm_results["p-value"].fillna(1)
-    glm_results = compute_bh_fdr(glm_results, verbose=True)
+    regression_results["p-value"] = regression_results["p-value"].fillna(1)
+    regression_results = compute_bh_fdr(regression_results, verbose=True)
 
     # 3. RLM Effect Size Filtering
     if regression_type == "rlm":
         logger.info(
             f"Applying RLM effect size filter (min_effect={args.min_rlm_effect})..."
         )
-        mask = glm_results.coef.abs() < args.min_rlm_effect
+        mask = regression_results.coef.abs() < args.min_rlm_effect
         n_filtered = mask.sum()
-        glm_results.loc[mask, "fdr_bh"] = 1.0
+        regression_results.loc[mask, "fdr_bh"] = 1.0
         logger.info(f"Set {n_filtered} results to FDR=1.0 due to small effect size.")
 
     # Count significant
-    n_sig = (glm_results["fdr_bh"] < 0.05).sum()
+    n_sig = (regression_results["fdr_bh"] < 0.05).sum()
     logger.info(f"Total significant features (FDR < 0.05): {n_sig}")
 
     # 4. Summary Counts
-    total_counts = glm_results["tissue"].value_counts()
-    sig_counts = glm_results.loc[glm_results["fdr_bh"] < 0.05]["tissue"].value_counts()
+    total_counts = regression_results["tissue"].value_counts()
+    sig_counts = regression_results.loc[regression_results["fdr_bh"] < 0.05][
+        "tissue"
+    ].value_counts()
 
     summary_df = pd.DataFrame({"Total": total_counts, "Significant": sig_counts})
     summary_df["Significant"] = summary_df["Significant"].fillna(0).astype(int)
@@ -259,25 +260,27 @@ def main():
     # We will just name it "all_celltypes".
 
     results_file = (
-        results_dir / f"{project}.{modality}.all_celltypes.{regression_type}.age.csv"
+        results_dir / f"{project}.all_celltypes.{modality}.{regression_type}.age.csv"
     )
     results_fdr_file = (
         results_dir
-        / f"{project}.{modality}.all_celltypes.{regression_type}_fdr.age.csv"
+        / f"{project}.all_celltypes.{modality}.{regression_type}_fdr.age.csv"
     )
 
     logger.info(f"Saving full results to {results_file}")
-    glm_results.to_csv(results_file, index=False)
+    regression_results.to_csv(results_file, index=False)
 
     logger.info(f"Saving significant results to {results_fdr_file}")
-    glm_results.loc[glm_results["fdr_bh"] < 0.05].to_csv(results_fdr_file, index=False)
+    regression_results.loc[regression_results["fdr_bh"] < 0.05].to_csv(
+        results_fdr_file, index=False
+    )
 
     # 6. Volcano Plots
     logger.info("Generating volcano plots...")
 
     # Plot all results
     volcano_plot(
-        glm_results,
+        regression_results,
         project,
         modality,
         regression_type,
@@ -286,13 +289,19 @@ def main():
     )
 
     # Plot per cell type
-    cell_types = glm_results["tissue"].unique()
-    for ct in cell_types:
-        ct_results = glm_results.loc[glm_results.tissue == ct]
-        if ct_results.shape[0] > 0:
-            volcano_plot(
-                ct_results, project, modality, regression_type, figures_dir, title=ct
-            )
+    if args.volcano_per_celltype:
+        cell_types = regression_results["tissue"].unique()
+        for ct in cell_types:
+            ct_results = regression_results.loc[regression_results.tissue == ct]
+            if ct_results.shape[0] > 0:
+                volcano_plot(
+                    ct_results,
+                    project,
+                    modality,
+                    regression_type,
+                    figures_dir,
+                    title=ct,
+                )
 
 
 if __name__ == "__main__":
