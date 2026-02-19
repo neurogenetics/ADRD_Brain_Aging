@@ -56,15 +56,15 @@ def parse_args():
     parser.add_argument(
         "--imputer-type",
         type=str,
-        default="knn",
-        choices=["iterative", "knn", "simple"],
+        default="zero",
+        choices=["iterative", "knn", "simple", "zero"],
         help="Type of imputation to use.",
     )
     parser.add_argument(
         "--top-var-fraction",
         type=float,
-        default=0.25,
-        help="Fraction of top variable features to analyze (default: 0.25).",
+        default=0.10,
+        help="Fraction of top variable features to analyze (default: 0.10).",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
@@ -178,6 +178,10 @@ def impute_missing_values(
     quants_df: DataFrame, variance_features: list, imputer_type: str
 ) -> DataFrame:
     logger.info("impute missing values")
+
+    if imputer_type == "zero":
+        logger.info("imputing with zero fill")
+        return quants_df[variance_features].fillna(0)
 
     if imputer_type == "iterative":
         logger.info("imputing with IterativeImputer")
@@ -436,24 +440,25 @@ def main():
     # Save final covariates terms to a file
     final_covariates = known_covariates + pca_df.columns.tolist()
 
-    # Generate FAMD features from these final covariates (compressing them)
-    famd_df = generate_famd_features(
-        ext_data_df,
-        [x for x in final_covariates if x != "age"],
-        out_figure_path,
-        title_suffix,
-        debug=debug,
-    )
-
-    # Append FAMD features to the extended dataframe
-    ext_data_df = ext_data_df.merge(
-        famd_df, how="inner", left_index=True, right_index=True
-    )
+    # # Generate FAMD features from these final covariates (compressing them)
+    # famd_df = generate_famd_features(
+    #     ext_data_df,
+    #     [x for x in final_covariates if x != "age"],
+    #     out_figure_path,
+    #     title_suffix,
+    #     n_components=pca_df.shape[1],
+    #     debug=debug,
+    # )
+    #
+    # # Append FAMD features to the extended dataframe
+    # ext_data_df = ext_data_df.merge(
+    #     famd_df, how="inner", left_index=True, right_index=True
+    # )
 
     # Update final covariates list to include FAMD components
     # (keeping original covariates + FAMD components as requested,
     # or should I replace? "appended to them" implies keeping both)
-    final_covariates_extended = final_covariates + famd_df.columns.tolist()
+    # final_covariates_extended = final_covariates + famd_df.columns.tolist()
 
     final_covariates_file = (
         info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
@@ -467,27 +472,40 @@ def main():
     if probs_term:
         rename_map[probs_term] = "label_probs"
 
-    ext_data_df[final_covariates_extended].rename(columns=rename_map).to_csv(
+    ext_data_df[final_covariates].rename(columns=rename_map).to_csv(
         final_covariates_file
     )
 
     # check if any of the known or generated covariates are correlated with age
+    logger.info("Checking for correlations between age and known covariates")
     check_correlations(
-        ext_data_df[final_covariates_extended],
+        ext_data_df[known_covariates],
         "age",
-        [x for x in final_covariates_extended if x != "age"],
+        [x for x in known_covariates if x != "age"],
     )
+    logger.info("Checking for correlations between age and PCA covariates")
+    check_correlations(
+        ext_data_df[final_covariates],
+        "age",
+        [x for x in final_covariates if x.startswith("PCA_")],
+    )
+    # logger.info("Checking for correlations between age and FAMD covariates")
+    # check_correlations(
+    #     ext_data_df[final_covariates_extended],
+    #     "age",
+    #     [x for x in final_covariates_extended if x.startswith("FAMD_")],
+    # )
 
     # Regress out non-target covariates (everything except age)
     # Using the original uncompressed covariates for regression as per typical workflow
     # unless instructed otherwise. The FAMD is likely for downstream analysis.
-    non_target_covariates = [x for x in final_covariates if x != "age"]
+    # non_target_covariates = [x for x in final_covariates if x != "age"]
 
     # Features are the columns from the original quantified data
     feature_cols = quants_df.columns.tolist()
 
     residuals_df = perform_regression_correction(
-        ext_data_df[feature_cols], ext_data_df, non_target_covariates, debug
+        ext_data_df[feature_cols], ext_data_df, pca_df.columns.tolist(), debug
     )
 
     residuals_file = (
