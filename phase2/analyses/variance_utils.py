@@ -262,11 +262,11 @@ def fit_and_report_correlation(
     return_tvalues: bool = False,
 ):
     """
-    Helper to fit a GLM and report results.
+    Helper to fit a linear regression and report results.
     """
     logger.info(f"--- {description}: {formula} ---")
     try:
-        model = smf.glm(formula=formula, data=data_df)
+        model = smf.ols(formula=formula, data=data_df)
         result = model.fit()
         logger.info(result.summary())
         if return_tvalues:
