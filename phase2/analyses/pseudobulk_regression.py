@@ -11,6 +11,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from pandas import DataFrame as PandasDF
 from pandas import read_csv, read_parquet
+import statsmodels.stats.multitest as smm
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -50,8 +51,8 @@ def parse_args():
     parser.add_argument(
         "--regression-type",
         type=str,
-        default="glm_tweedie",
-        choices=["glm", "glm_tweedie", "rlm"],
+        default="ols",
+        choices=["ols", "rlm", "glm", "glm_tweedie"],
         help="Regression method to use.",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
@@ -78,7 +79,7 @@ def load_final_covariates(
 def load_quants(
     quants_dir: Path, project: str, cell_type: str, modality: str, debug: bool = False
 ) -> PandasDF:
-    data_file = quants_dir / f"{project}.{cell_type}.{modality}.scaled.parquet"
+    data_file = quants_dir / f"{project}.{cell_type}.{modality}.parquet"
     if not data_file.exists():
         logger.error(f"quants data file not found: {data_file}")
         raise FileNotFoundError(f"quants data file not found: {data_file}")
@@ -90,8 +91,14 @@ def load_quants(
     return quants_df
 
 
-def glm_model(formula: str, df: PandasDF, model_type: str = "rlm"):
-    if model_type == "glm_tweedie":
+def regression_model(formula: str, df: PandasDF, model_type: str = "ols"):
+    if model_type == "ols":
+        model = smf.ols(formula=formula, data=df)
+        result = model.fit(cov_type="HC3")
+    elif model_type == "rlm":
+        model = smf.rlm(formula=formula, data=df, M=sm.robust.norms.HuberT())
+        result = model.fit()
+    elif model_type == "glm_tweedie":
         model = smf.glm(
             formula=formula,
             data=df,
@@ -99,35 +106,31 @@ def glm_model(formula: str, df: PandasDF, model_type: str = "rlm"):
                 link=sm.families.links.Log(), var_power=1.6, eql=True
             ),
         )
-    elif model_type == "rlm":
-        model = smf.rlm(formula=formula, data=df)
+        result = model.fit()
     elif model_type == "glm":
         model = smf.glm(formula=formula, data=df)
-    result = model.fit()
+        result = model.fit()
     return result
 
 
-def glm_age(
+def age_regression(
     df: PandasDF, feature: str, regression_type: str, verbose: bool = False
 ) -> list:
     endo_term = feature
     exog_term = "age"
-    # Note: Using only 'age' as the model term since other covariates were regressed out in prep_pb_data.py
-    # However, we need to make sure 'age' is in the dataframe.
-    # The quants dataframe should have features as columns and samples as rows.
-    # The 'age' variable comes from the merged covariates dataframe.
 
-    this_formula = (
-        f'Q("{endo_term}") ~ {exog_term} + FAMD_0 + FAMD_1 + FAMD_2 + FAMD_3 + FAMD_4'
-    )
+    covariates = [x for x in df.columns.tolist() if x not in [endo_term, exog_term]]
+    if len(covariates) > 0:
+        covar_term_formula = " + ".join(covariates)
+        this_formula = f'Q("{endo_term}") ~ {exog_term} + {covar_term_formula}'
+    else:
+        this_formula = f'Q("{endo_term}") ~ {exog_term}'
 
     try:
-        # run GLM via statsmodel
-        result = glm_model(
+        # run regression via statsmodel
+        result = regression_model(
             this_formula,
-            df[
-                [endo_term, exog_term, "FAMD_0", "FAMD_1", "FAMD_2", "FAMD_3", "FAMD_4"]
-            ],
+            df,
             model_type=regression_type,
         )
         ret_list = [
@@ -137,11 +140,26 @@ def glm_age(
             result.bse[exog_term],
             result.tvalues[exog_term],
             result.pvalues[exog_term],
+            np.exp(result.params[exog_term]),
+            result.params[exog_term] / np.log(2),
+            (np.exp(result.params[exog_term]) - 1) * 100,
         ]
         if verbose:
             print(f"df shape {df.shape}")
             print(result.summary())
-            print(["feature", "intercept", "coef", "stderr", "z", "p-value"])
+            print(
+                [
+                    "feature",
+                    "intercept",
+                    "coef",
+                    "stderr",
+                    "test_statistic",
+                    "p-value",
+                    "fc",
+                    "log2fc",
+                    "percentchange",
+                ]
+            )
             print(ret_list)
     except Exception as e:
         if verbose:
@@ -165,8 +183,11 @@ def regress_age(
     # Merge quants with covariates (we need 'age')
     # Note: covars contains 'age' and other technical factors.
     # Even though we regressed out technical factors, we still need 'age' for the final association test.
+    terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("PCA_")]
+    # terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("FAMD_")]
+
     data_df = quants.merge(
-        covars[["age", "FAMD_0", "FAMD_1", "FAMD_2", "FAMD_3", "FAMD_4"]],
+        covars[terms],
         how="inner",
         left_index=True,
         right_index=True,
@@ -177,7 +198,9 @@ def regress_age(
 
     type_results = []
     for i, feature in enumerate(features):
-        type_results.append(glm_age(data_df, feature, regression_type))
+        type_results.append(
+            age_regression(data_df[[feature] + terms], feature, regression_type)
+        )
         if (i + 1) % 1000 == 0:
             print(f"Processed {i + 1}/{len(features)}...", end="\r")
 
@@ -185,9 +208,25 @@ def regress_age(
 
     results_df = PandasDF(
         data=type_results,
-        columns=["feature", "intercept", "coef", "stderr", "z", "p-value"],
+        columns=[
+            "feature",
+            "intercept",
+            "coef",
+            "stderr",
+            "z",
+            "p-value",
+            "fc",
+            "log2fc",
+            "percentchange",
+        ],
     )
+    results_df["bh_fdr_tissue"] = compute_fdr(results_df["p-value"].fillna(1))
     results_df["tissue"] = cell_name
+
+    total_sig = results_df.loc[results_df.bh_fdr_tissue <= 0.05].shape[0]
+    logger.info(
+        f"in {cell_name} found {total_sig} features that are significant using within tissue FDR"
+    )
 
     # Save results
     out_file = (
@@ -195,6 +234,11 @@ def regress_age(
     )
     results_df.to_csv(out_file, index=False)
     logger.info(f"Saved results to {out_file}")
+
+
+def compute_fdr(pvalues):
+    bh_adj = smm.fdrcorrection(pvalues)
+    return bh_adj[1]
 
 
 def main():
