@@ -7,7 +7,6 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.linear_model import LinearRegression
-import numpy as np
 from prince import FAMD
 from variance_utils import (
     get_high_variance_features,
@@ -147,7 +146,9 @@ def generate_latent_features(
     candidate_quants = quants_df[candidate_features]
 
     # Impute missing values before regression to ensure the regression can run properly
-    imputed_df = impute_missing_values(candidate_quants, candidate_features, imputer_type)
+    imputed_df = impute_missing_values(
+        candidate_quants, candidate_features, imputer_type
+    )
     logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
 
     # Regress out known covariates effects before determining variance and PCA
@@ -160,13 +161,12 @@ def generate_latent_features(
     )
 
     # Determine high variance features on the residuals
-    variance_features = get_high_variance_features(
-        residual_df, top_var_fraction
-    )
+    variance_features = get_high_variance_features(residual_df, top_var_fraction)
     logger.info(f"Found {len(variance_features)} high variance features in residuals")
     max_count = int(
         min(
-            residual_df[variance_features].shape[0], residual_df[variance_features].shape[1]
+            residual_df[variance_features].shape[0],
+            residual_df[variance_features].shape[1],
         )
         / 2
     )
@@ -174,7 +174,11 @@ def generate_latent_features(
 
     # Perform PCA on the subset of high-variance residual features
     pca_df = determine_pca_components(
-        residual_df[variance_features], max_count, str(out_figure_path), debug, title_suffix
+        residual_df[variance_features],
+        max_count,
+        str(out_figure_path),
+        debug,
+        title_suffix,
     )
 
     return pca_df
@@ -364,8 +368,15 @@ def main():
     args = parse_args()
     debug = args.debug
 
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    figs_dir = work_dir / "figures"
+    logs_dir = work_dir / "logs"
+
     # Configure logging to file
-    log_filename = f"{args.cell_type}_{args.modality}_prep_pb.log"
+    log_filename = f"{logs_dir}/{args.cell_type}_{args.modality}_prep_pb.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -373,12 +384,6 @@ def main():
         force=True,
     )
     logger.info(f"Logging configured. Writing to {log_filename}")
-
-    # Setup directories
-    work_dir = Path(args.work_dir)
-    quants_dir = work_dir / "quants"
-    info_dir = work_dir / "sample_info"
-    figs_dir = work_dir / "figures"
 
     # Ensure directories exist
     figs_dir.mkdir(parents=True, exist_ok=True)
@@ -469,9 +474,7 @@ def main():
     final_covariates_file = (
         info_dir / f"{args.project}.{cell_type}.{modality}.final_covariates.csv"
     )
-    logger.info(
-        f"Saving final covariates terms (including FAMD) to {final_covariates_file}"
-    )
+    logger.info(f"Saving final covariates terms to {final_covariates_file}")
 
     # Rename columns for standardizing terms in the output file
     rename_map = {counts_term: "cell_counts"}
@@ -511,7 +514,7 @@ def main():
     feature_cols = quants_df.columns.tolist()
 
     residuals_df = perform_regression_correction(
-        ext_data_df[feature_cols], ext_data_df, pca_df.columns.tolist(), debug
+        ext_data_df[feature_cols], ext_data_df, final_covariates, debug
     )
 
     residuals_file = (
