@@ -1,12 +1,14 @@
 from tabulate import tabulate
 import logging
 import argparse
+import sys
 from pathlib import Path
-from pandas import DataFrame, read_csv, read_parquet, get_dummies
+from pandas import DataFrame, read_csv, read_parquet
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.linear_model import LinearRegression
+from patsy import dmatrix
 from prince import FAMD
 from variance_utils import (
     get_high_variance_features,
@@ -222,7 +224,7 @@ def perform_regression_correction(
 ) -> DataFrame:
     """
     Regresses out specified covariates from features.
-    Handles categorical covariates via one-hot encoding.
+    Handles categorical covariates correctly via statsmodels formula instead of blind one-hot encoding.
     Imputes missing values in Y for fitting, but returns residuals based on original Y (preserving NaNs).
     """
     logger.info(f"Regressing out {covariate_cols} from features...")
@@ -236,17 +238,10 @@ def perform_regression_correction(
 
     Y_orig = feature_df.loc[common_idx]
     # Ensure covariates are a DataFrame
-    X_source = covariate_df.loc[common_idx, covariate_cols]
+    X_source = covariate_df.loc[common_idx, covariate_cols].copy()
 
-    # One-hot encode covariates
-    X = get_dummies(X_source, drop_first=True, dtype=float)
     if debug:
-        peek_dataframe(X, "Encoded covariates matrix")
-
-    # Handle missing in X (impute with mean)
-    if X.isnull().values.any():
-        logger.warning("Found missing values in covariates. Imputing with mean.")
-        X = X.fillna(X.mean())
+        peek_dataframe(X_source, "Covariates matrix for regression")
 
     # Handle missing in Y for fit (impute with mean)
     Y_fit = Y_orig.copy()
@@ -254,12 +249,20 @@ def perform_regression_correction(
         logger.warning("Found missing values in features. Imputing with mean for fit.")
         Y_fit = Y_fit.fillna(Y_fit.mean())
 
-    # Fit
-    reg = LinearRegression()
-    reg.fit(X, Y_fit)
+    # Build the design matrix using patsy/statsmodels so categorical vs continuous is respected
+
+    # We want to formula to be: ~ var1 + var2 + ...
+    # Categorical string variables will automatically be dummy encoded by patsy
+    formula = "~ " + " + ".join(covariate_cols)
+    X_design = dmatrix(formula, X_source, return_type="dataframe")
+
+    # Fit the linear regression using sklearn (fast for multi-target)
+    # n_jobs=-1 parallelizes the computation across all available CPU cores
+    reg = LinearRegression(n_jobs=-1)
+    reg.fit(X_design, Y_fit)
 
     # Residuals = Original - Predicted
-    residuals = Y_orig - reg.predict(X)
+    residuals = Y_orig - reg.predict(X_design)
 
     return residuals
 
@@ -383,6 +386,7 @@ def main():
         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
         force=True,
     )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
 
     # Ensure directories exist
@@ -514,7 +518,10 @@ def main():
     feature_cols = quants_df.columns.tolist()
 
     residuals_df = perform_regression_correction(
-        ext_data_df[feature_cols], ext_data_df, final_covariates, debug
+        ext_data_df[feature_cols],
+        ext_data_df,
+        [x for x in final_covariates if x != "age"],
+        debug,
     )
 
     residuals_file = (
