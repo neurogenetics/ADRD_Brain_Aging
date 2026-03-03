@@ -1,5 +1,5 @@
 from pandas import DataFrame, Series
-from numpy import where, cumsum, arange
+from numpy import arange
 from sklearn.metrics import r2_score, root_mean_squared_error
 from sklearn.decomposition import PCA, FastICA, NMF
 from kneed import KneeLocator
@@ -186,69 +186,91 @@ def perform_variance_partition(
     and categorical variables as random effects using statsmodels MixedLM.
     """
     try:
+        import numpy as np
+        from patsy import dmatrices
+
         # Create model columns list
         model_cols = fixed_effects + random_effects + [feature_name]
 
         # Create a temporary dataframe for modeling
-        fit_df = data_df[model_cols].dropna()
+        fit_df = data_df[model_cols].dropna().copy()
+
         # Check if enough data remains
-        if fit_df.empty:
+        if len(fit_df) < 5:
             return None
 
         fit_df["dummy_group"] = 1
 
         # formula for fixed effects
         # Patsy handles basic formula parsing
-        fixed_formula = f"Q('{feature_name}') ~ " + " + ".join(fixed_effects)
+        fixed_formula = (
+            f"Q('{feature_name}') ~ " + " + ".join(fixed_effects)
+            if fixed_effects
+            else f"Q('{feature_name}') ~ 1"
+        )
 
         # formula for random effects (categorical)
         vc_formula = {effect: f"0 + C({effect})" for effect in random_effects}
 
+        y_design, X_design = dmatrices(fixed_formula, fit_df, return_type="dataframe")
+        design_info = X_design.design_info
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            # Fit the Linear Mixed Model
-            model = smf.mixedlm(
-                fixed_formula,
-                data=fit_df,
-                groups="dummy_group",
-                re_formula="0",  # No random intercept for the dummy group itself
-                vc_formula=vc_formula,
-            )
-            result = model.fit()
-            # logger.info(result.summary()) # Silenced for batch processing
+            if vc_formula:
+                # Fit the Linear Mixed Model
+                model = smf.mixedlm(
+                    fixed_formula,
+                    data=fit_df,
+                    groups="dummy_group",
+                    re_formula="0",  # No random intercept for the dummy group itself
+                    vc_formula=vc_formula,
+                )
+                result = model.fit(reml=False, maxiter=200)
+            else:
+                model = smf.ols(fixed_formula, data=fit_df)
+                result = model.fit()
 
         # --- CALCULATE VARIANCE FRACTIONS ---
+        variances = {}
 
         # 1. Random Effects Variance (from vc_formula)
-        try:
-            vc_names = result.model.exog_vc.names
-        except AttributeError:
-            vc_names = [f"Var_Comp_{i}" for i in range(len(result.vcomp))]
+        if vc_formula and hasattr(result, "vcomp"):
+            try:
+                vc_names = result.model.exog_vc.names
+            except AttributeError:
+                vc_names = random_effects
 
-        random_vars = dict(zip(vc_names, result.vcomp))
+            vcomp_dict = dict(zip(vc_names, result.vcomp))
+            for re_name in random_effects:
+                variances[re_name] = vcomp_dict.get(re_name, 0.0)
 
-        # 2. Fixed Effects Variance
-        # Var_explained = beta^2 * Var(X)
-        fixed_vars = {}
-        for term in fixed_effects:
-            # Statsmodels params keys might differ slightly (e.g., Q('feature'))
-            # But the predictors are in fixed_effects
-            if term in result.params:
-                beta = result.params[term]
-                var_x = fit_df[term].var()
-                fixed_vars[term] = (beta**2) * var_x
+        # 2. Residual Variance
+        variances["Residual"] = result.scale
 
-        # 3. Residual Variance
-        residual_var = result.scale
+        # 3. Fixed Effects Variance
+        params = result.params
+        for term_name in design_info.term_names:
+            if term_name == "Intercept":
+                continue
+
+            slice_idx = design_info.term_name_slices[term_name]
+            col_names = design_info.column_names[slice_idx]
+
+            beta_term = params[col_names]
+            X_term = X_design[col_names]
+
+            fitted_term = X_term.dot(beta_term.values)
+            variances[term_name] = np.var(fitted_term, ddof=1)
 
         # 4. Combine and Normalize
-        all_variances = {**random_vars, **fixed_vars, "Residual": residual_var}
-        all_variances_series = Series(all_variances)
+        total_var = sum(variances.values())
+        if total_var > 0:
+            fractions = {k: v / total_var for k, v in variances.items()}
+        else:
+            fractions = {k: np.nan for k in variances.keys()}
 
-        total_var = all_variances_series.sum()
-        fractions = all_variances_series / total_var
-
-        return (feature_name, fractions)
+        return (feature_name, Series(fractions))
 
     except Exception as e:
         logger.warning(f"Failed to process {feature_name}: {e}")

@@ -222,7 +222,8 @@ def process_variance_results(
 
         # Optionally describe the overall distribution
         print("\n--- Summary of Variance Explained ---")
-        print(variance_fractions_df.describe())
+        summary_stats = variance_fractions_df.describe()
+        print(summary_stats)
 
         if out_prefix:
             try:
@@ -231,8 +232,21 @@ def process_variance_results(
                     var_name="Component", value_name="Variance Fraction"
                 )
 
+                # Determine the ordering: Residual last, others sorted by mean descending
+                means = variance_fractions_df.mean()
+                if "Residual" in means:
+                    residual_mean = means.pop("Residual")
+                    order = list(means.sort_values(ascending=False).index) + ["Residual"]
+                    logger.info(f"Mean Residual Variance {suffix}: {residual_mean:.4f}")
+                elif "Residuals" in means: # Fallback just in case
+                    residual_mean = means.pop("Residuals")
+                    order = list(means.sort_values(ascending=False).index) + ["Residuals"]
+                    logger.info(f"Mean Residuals Variance {suffix}: {residual_mean:.4f}")
+                else:
+                    order = list(means.sort_values(ascending=False).index)
+
                 plt.figure(figsize=(12, 6))
-                sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction")
+                sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction", order=order)
                 plt.xticks(rotation=45, ha="right")
                 plt.title(
                     f"Variance Partitioning Results {suffix}\n{plot_title_suffix}"
