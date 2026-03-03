@@ -143,32 +143,38 @@ def generate_latent_features(
         )
         candidate_features = quants_df.columns.tolist()
 
-    variance_features = get_high_variance_features(
-        quants_df[candidate_features], top_var_fraction
+    # Subset to candidate features first
+    candidate_quants = quants_df[candidate_features]
+
+    # Impute missing values before regression to ensure the regression can run properly
+    imputed_df = impute_missing_values(candidate_quants, candidate_features, imputer_type)
+    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
+
+    # Regress out known covariates effects before determining variance and PCA
+    # This ensures PCA captures true unknown variation, not variance driven by the target covariate
+    residual_df = perform_regression_correction(
+        imputed_df, covariates_df, covariate_cols, debug
     )
-    logger.info(f"Found {len(variance_features)} high variance features")
+    logger.info(
+        f"Residuals DataFrame shape after regressing out known covariates: {residual_df.shape}"
+    )
+
+    # Determine high variance features on the residuals
+    variance_features = get_high_variance_features(
+        residual_df, top_var_fraction
+    )
+    logger.info(f"Found {len(variance_features)} high variance features in residuals")
     max_count = int(
         min(
-            quants_df[variance_features].shape[0], quants_df[variance_features].shape[1]
+            residual_df[variance_features].shape[0], residual_df[variance_features].shape[1]
         )
         / 2
     )
     logger.info(f"Max components count: {max_count}")
 
-    # deal with any missing values
-    imputed_df = impute_missing_values(quants_df, variance_features, imputer_type)
-    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
-
-    # Regress out known covariates effects before PCA
-    imputed_df = perform_regression_correction(
-        imputed_df, covariates_df, covariate_cols, debug
-    )
-    logger.info(
-        f"Residuals DataFrame shape after regressing out known covariates: {imputed_df.shape}"
-    )
-
+    # Perform PCA on the subset of high-variance residual features
     pca_df = determine_pca_components(
-        imputed_df, max_count, str(out_figure_path), debug, title_suffix
+        residual_df[variance_features], max_count, str(out_figure_path), debug, title_suffix
     )
 
     return pca_df
