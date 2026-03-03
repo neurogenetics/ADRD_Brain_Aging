@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 from pathlib import Path
 from pandas import DataFrame, read_csv, read_parquet
 import statsmodels.formula.api as smf
@@ -236,17 +237,25 @@ def process_variance_results(
                 means = variance_fractions_df.mean()
                 if "Residual" in means:
                     residual_mean = means.pop("Residual")
-                    order = list(means.sort_values(ascending=False).index) + ["Residual"]
+                    order = list(means.sort_values(ascending=False).index) + [
+                        "Residual"
+                    ]
                     logger.info(f"Mean Residual Variance {suffix}: {residual_mean:.4f}")
-                elif "Residuals" in means: # Fallback just in case
+                elif "Residuals" in means:  # Fallback just in case
                     residual_mean = means.pop("Residuals")
-                    order = list(means.sort_values(ascending=False).index) + ["Residuals"]
-                    logger.info(f"Mean Residuals Variance {suffix}: {residual_mean:.4f}")
+                    order = list(means.sort_values(ascending=False).index) + [
+                        "Residuals"
+                    ]
+                    logger.info(
+                        f"Mean Residuals Variance {suffix}: {residual_mean:.4f}"
+                    )
                 else:
                     order = list(means.sort_values(ascending=False).index)
 
                 plt.figure(figsize=(12, 6))
-                sns.boxenplot(data=plot_df, x="Component", y="Variance Fraction", order=order)
+                sns.boxenplot(
+                    data=plot_df, x="Component", y="Variance Fraction", order=order
+                )
                 plt.xticks(rotation=45, ha="right")
                 plt.title(
                     f"Variance Partitioning Results {suffix}\n{plot_title_suffix}"
@@ -275,6 +284,7 @@ def main():
         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
         force=True,
     )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
 
     # Setup directories

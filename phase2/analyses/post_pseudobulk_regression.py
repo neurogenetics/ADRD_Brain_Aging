@@ -2,6 +2,7 @@ import argparse
 import logging
 import warnings
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -147,20 +148,31 @@ def main():
     args = parse_args()
     debug = args.debug
 
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    results_dir = work_dir / "results"
+    figures_dir = work_dir / "figures"
+    logs_dir = work_dir / "logs"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+
     # Configure logging
-    log_filename = f"{args.modality}_{args.regression_type}_post_regression.log"
+    log_filename = (
+        f"{logs_dir}/{args.modality}_{args.regression_type}_post_regression.log"
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
         force=True,
     )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
 
     # Setup directories
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
     figures_dir = work_dir / "figures"
+    logs_dir = work_dir / "logs"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     project = args.project

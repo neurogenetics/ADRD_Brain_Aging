@@ -4,6 +4,7 @@ import random
 import warnings
 from multiprocessing import Process
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -245,21 +246,23 @@ def main():
     args = parse_args()
     debug = args.debug
 
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    results_dir = work_dir / "results"
+    logs_dir = work_dir / "logs"
+
     # Configure logging to file and stdout
-    log_filename = f"{args.cell_type}_{args.modality}_{args.regression_type}_pseudobulk_regression.log"
+    log_filename = f"{logs_dir}/{args.cell_type}_{args.modality}_{args.regression_type}_pseudobulk_regression.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
         force=True,
     )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
-
-    # Setup directories
-    work_dir = Path(args.work_dir)
-    quants_dir = work_dir / "quants"
-    info_dir = work_dir / "sample_info"
-    results_dir = work_dir / "results"
 
     # Ensure results directory exists
     results_dir.mkdir(parents=True, exist_ok=True)
