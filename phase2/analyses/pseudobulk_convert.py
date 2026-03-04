@@ -131,8 +131,7 @@ def process_modality(
     if verbose:
         logger.info(f"low count masked donors: {ct_data.obs[donor_mask]['sample_id']}")
 
-    # Reset X to raw sums
-    ct_data.X = ct_data.layers["sum"].copy()
+    # for low count sample change there values to missing
     ct_data.X[donor_mask, :] = np.nan
 
     # Filter features
@@ -145,20 +144,6 @@ def process_modality(
         f"[{ct} - {modal_short}] Filtered {pre_filter - post_filter} features. "
         f"Masked {len(low_count_samples)} low-count samples."
     )
-
-    # Normalize
-    # RNA: CPM + Log1p | ATAC: RPM + Log1p
-    # Suppress warning about zero-count cells (intentionally masked)
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message="Some cells have zero counts", category=UserWarning
-        )
-        sc.pp.normalize_total(ct_data, target_sum=TARGET_SUM_NORM)
-
-    sc.pp.log1p(ct_data)
-
-    if verbose:
-        logger.debug(ct_data, f"transformed pseudobulk {modal_short}", verbose)
 
     # Convert to DataFrame
     df_modal = ct_data.to_df()
@@ -192,10 +177,7 @@ def main():
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_filename),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.FileHandler(log_filename), logging.StreamHandler(sys.stdout)],
     )
 
     logger.info(f"Command line: {' '.join(sys.argv)}")
@@ -224,6 +206,27 @@ def main():
             adata_modal, by=["sample_id", "cell_label"], func="sum"
         )
         logger.debug(peek_anndata(pb_adata, "Pseudobulked AnnData", debug))
+
+        # Reset X to raw sums
+        pb_adata.X = pb_adata.layers["sum"].copy()
+
+        # Normalize
+        # RNA: CPM + Log1p | ATAC: RPM + Log1p
+        # Suppress warning about zero-count cells (intentionally masked)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="Some cells have zero counts", category=UserWarning
+            )
+            sc.pp.normalize_total(
+                pb_adata, target_sum=TARGET_SUM_NORM, exclude_highly_expressed=True
+            )
+
+        sc.pp.log1p(pb_adata)
+
+        if debug:
+            logger.debug(
+                peek_anndata(pb_adata, f"transformed pseudobulk {modal_short}", debug)
+            )
 
         # 3. Process each Cell Type
         unique_cell_types = pb_adata.obs["cell_label"].unique()
