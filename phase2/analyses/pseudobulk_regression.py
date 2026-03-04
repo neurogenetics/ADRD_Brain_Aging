@@ -56,6 +56,13 @@ def parse_args():
         choices=["ols", "rlm", "glm", "glm_tweedie"],
         help="Regression method to use.",
     )
+    parser.add_argument(
+        "--covariates",
+        type=str,
+        default="all",
+        choices=["none", "all", "knowns", "unknowns"],
+        help="Which covariates to include. 'none' includes only age. 'all' includes all. 'knowns' excludes PCA_ terms. 'unknowns' includes only age and PCA_ terms.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -178,15 +185,24 @@ def regress_age(
     regression_type: str,
     results_dir: Path,
     project: str,
+    covariate_type: str,
 ) -> None:
     logger.info(f"Starting regression for {cell_name} using {regression_type}")
 
     # Merge quants with covariates (we need 'age')
     # Note: covars contains 'age' and other technical factors.
-    # Even though we regressed out technical factors, we still need 'age' for the final association test.
-    terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("PCA_")]
-    # terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("FAMD_")]
+    if covariate_type == "none":
+        terms = ["age"]
+    elif covariate_type == "all":
+        terms = covars.columns.tolist()
+    elif covariate_type == "knowns":
+        terms = [x for x in covars.columns.tolist() if not x.startswith("PCA_")]
+    elif covariate_type == "unknowns":
+        terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("PCA_")]
+    else:
+        raise ValueError(f"Unknown covariate_type: {covariate_type}")
 
+    logger.info(f"Independent variable and covariates terms used: {terms}")
     data_df = quants.merge(
         covars[terms],
         how="inner",
@@ -288,8 +304,8 @@ def main():
         args.regression_type,
         results_dir,
         project,
+        args.covariates,
     )
-
 
 if __name__ == "__main__":
     main()
