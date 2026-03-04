@@ -6,6 +6,9 @@ echo "Executing: $0 $@"
 # format the initial knowns covariates by modality
 uv run phase2/analysis/format_covariates.py
 
+# pseudobulk convert the modalities and save per cell-type
+uv run phase2/analyses/pseudobulk_convert.py
+
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 phase2/run_prep_pb_jobs.sh prep_pb_data.py rna
 phase2/run_prep_pb_jobs.sh prep_pb_data.py atac
