@@ -180,6 +180,26 @@ def main():
     # Setup directories
     work_dir = Path(args.work_dir)
     quants_dir = work_dir / "quants"
+    logs_dir = work_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    log_filename = logs_dir / f"{args.project}_pseudobulk_convert.log"
+
+    # Reconfigure logging to include file output
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+    logger.info(f"Command line: {' '.join(sys.argv)}")
+    logger.info(f"Logging configured. Writing to {log_filename}")
 
     raw_file = quants_dir / f"{args.project}.raw.multivi_prep.h5ad"
     annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
