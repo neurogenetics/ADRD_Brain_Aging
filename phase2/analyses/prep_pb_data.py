@@ -147,16 +147,16 @@ def generate_latent_features(
     # Subset to candidate features first
     candidate_quants = quants_df[candidate_features]
 
-    # Impute missing values before regression to ensure the regression can run properly
-    imputed_df = impute_missing_values(
-        candidate_quants, candidate_features, imputer_type
-    )
-    logger.info(f"Imputed DataFrame shape: {imputed_df.shape}")
+    # Drop samples with missing values instead of imputing,
+    # since these samples were intentionally masked for low cell counts
+    clean_quants = candidate_quants.dropna()
+    dropped_count = candidate_quants.shape[0] - clean_quants.shape[0]
+    logger.info(f"Dropped {dropped_count} samples with missing values. Cleaned DataFrame shape: {clean_quants.shape}")
 
     # Regress out known covariates effects before determining variance and PCA
     # This ensures PCA captures true unknown variation, not variance driven by the target covariate
     residual_df = perform_regression_correction(
-        imputed_df, covariates_df, covariate_cols, debug
+        clean_quants, covariates_df, covariate_cols, debug
     )
     logger.info(
         f"Residuals DataFrame shape after regressing out known covariates: {residual_df.shape}"
