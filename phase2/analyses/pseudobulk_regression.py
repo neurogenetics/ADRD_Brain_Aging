@@ -60,8 +60,14 @@ def parse_args():
         "--covariates",
         type=str,
         default="all",
-        choices=["none", "all", "knowns", "unknowns"],
-        help="Which covariates to include. 'none' includes only age. 'all' includes all. 'knowns' excludes PCA_ terms. 'unknowns' includes only age and PCA_ terms.",
+        choices=["none", "all", "knowns", "unknowns", "specified"],
+        help="Which covariates to include. 'none' includes only age. 'all' includes all. 'knowns' excludes PCA_ terms. 'unknowns' includes only age and PCA_ terms. 'specified' requires --covariates-list.",
+    )
+    parser.add_argument(
+        "--covariates-list",
+        type=str,
+        nargs="+",
+        help="List of specific covariate names to use when --covariates specified is selected. 'age' is always included.",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
@@ -186,6 +192,7 @@ def regress_age(
     results_dir: Path,
     project: str,
     covariate_type: str,
+    covariates_list: list = None,
 ) -> None:
     logger.info(f"Starting regression for {cell_name} using {regression_type}")
 
@@ -199,8 +206,17 @@ def regress_age(
         terms = [x for x in covars.columns.tolist() if not x.startswith("PCA_")]
     elif covariate_type == "unknowns":
         terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("PCA_")]
+    elif covariate_type == "specified":
+        if not covariates_list:
+            raise ValueError("--covariates-list must be provided when using --covariates specified")
+        terms = ["age"] + [x for x in covariates_list if x != "age"]
     else:
         raise ValueError(f"Unknown covariate_type: {covariate_type}")
+
+    # Ensure all terms exist in the dataframe
+    missing_terms = [x for x in terms if x not in covars.columns]
+    if missing_terms:
+        raise ValueError(f"The following specified covariates are missing from the data: {missing_terms}")
 
     logger.info(f"Independent variable and covariates terms used: {terms}")
     data_df = quants.merge(
@@ -305,6 +321,7 @@ def main():
         results_dir,
         project,
         args.covariates,
+        args.covariates_list,
     )
 
 if __name__ == "__main__":
