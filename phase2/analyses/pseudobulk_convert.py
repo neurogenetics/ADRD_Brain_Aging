@@ -128,6 +128,9 @@ def process_modality(
     ct_low_count_ids = [f"{x}_{ct}" for x in low_count_samples]
     donor_mask = ct_data.obs_names.isin(ct_low_count_ids)
 
+    if verbose:
+        logger.info(f"low count masked donors: {ct_data.obs[donor_mask]['sample_id']}")
+
     # Reset X to raw sums
     ct_data.X = ct_data.layers["sum"].copy()
     ct_data.X[donor_mask, :] = np.nan
@@ -189,7 +192,8 @@ def main():
         logger.info(f"Subsetting anndata by modality: {modal_short}")
         modality_list = MODAL_TYPES_DICT.get(modal_short)
         adata_modal = adata_raw[
-            adata_raw.obs.modality.isin(modality_list), adata_raw.var.modality == modal_full
+            adata_raw.obs.modality.isin(modality_list),
+            adata_raw.var.modality == modal_full,
         ].copy()
         logger.debug(
             peek_anndata(adata_modal, f"subsetted anndata {modal_short}", debug)
