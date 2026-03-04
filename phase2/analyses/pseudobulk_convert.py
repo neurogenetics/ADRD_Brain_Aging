@@ -104,26 +104,20 @@ def load_and_prep_data(
 
 def process_modality(
     ct_data: AnnData,
-    raw_full_obs: DataFrame,
+    non_pb_obs: DataFrame,
     ct: str,
-    modal_full: str,
     modal_short: str,
-    modal_types: list,
     output_dir: Path,
     project_name: str,
+    verbose: bool = False,
 ):
     """Filters, normalizes, and saves pseudobulk data for a specific modality."""
-    # Subset by modality
-    ct_modal_data = ct_data[:, ct_data.var["modality"] == modal_full].copy()
-
-    if ct_modal_data.n_vars == 0:
-        logger.warning(f"No features found for {ct} - {modal_full}")
+    if ct_data.n_vars == 0:
+        logger.warning(f"No features found for {ct} - {modal_short}")
         return
 
     # Calculate donor-level cell counts to identify low-count samples
-    adata_cell_info = raw_full_obs.loc[
-        (raw_full_obs.cell_label == ct) & (raw_full_obs.modality.isin(modal_types))
-    ]
+    adata_cell_info = non_pb_obs.loc[non_pb_obs.cell_label == ct]
     donor_counts = adata_cell_info.groupby("sample_id", observed=True).size()
 
     min_cells = MIN_CELLS_RNA if modal_short == "rna" else MIN_CELLS_ATAC
@@ -132,17 +126,17 @@ def process_modality(
     # Mask donors with low cell counts
     # The index in pseudobulk is usually "{sample}_{celltype}"
     ct_low_count_ids = [f"{x}_{ct}" for x in low_count_samples]
-    donor_mask = ct_modal_data.obs_names.isin(ct_low_count_ids)
+    donor_mask = ct_data.obs_names.isin(ct_low_count_ids)
 
     # Reset X to raw sums
-    ct_modal_data.X = ct_modal_data.layers["sum"].copy()
-    ct_modal_data.X[donor_mask, :] = np.nan
+    ct_data.X = ct_data.layers["sum"].copy()
+    ct_data.X[donor_mask, :] = np.nan
 
     # Filter features
-    min_cells_threshold = int(ct_modal_data.n_obs * MIN_CELLS_PROP)
-    pre_filter = ct_modal_data.n_vars
-    sc.pp.filter_genes(ct_modal_data, min_cells=min_cells_threshold)
-    post_filter = ct_modal_data.n_vars
+    min_cells_threshold = int(ct_data.n_obs * MIN_CELLS_PROP)
+    pre_filter = ct_data.n_vars
+    sc.pp.filter_genes(ct_data, min_cells=min_cells_threshold)
+    post_filter = ct_data.n_vars
 
     logger.info(
         f"[{ct} - {modal_short}] Filtered {pre_filter - post_filter} features. "
@@ -156,14 +150,17 @@ def process_modality(
         warnings.filterwarnings(
             "ignore", message="Some cells have zero counts", category=UserWarning
         )
-        sc.pp.normalize_total(ct_modal_data, target_sum=TARGET_SUM_NORM)
+        sc.pp.normalize_total(ct_data, target_sum=TARGET_SUM_NORM)
 
-    sc.pp.log1p(ct_modal_data)
+    sc.pp.log1p(ct_data)
+
+    if verbose:
+        logger.debug(ct_data, f"transformed pseudobulk {modal_short}", verbose)
 
     # Convert to DataFrame
-    df_modal = ct_modal_data.to_df()
+    df_modal = ct_data.to_df()
     # Clean index names: remove the cell type suffix added by aggregation if present
-    df_modal.index = df_modal.index.str.replace(f"_{ct}", "")
+    df_modal.index = df_modal.index.str.removesuffix(f"_{ct}")
 
     # Save
     out_file = (
@@ -184,34 +181,44 @@ def main():
     raw_file = quants_dir / f"{args.project}.raw.multivi_prep.h5ad"
     annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
 
-    # 1. Load and Sync Data
+    # Load and Sync Data
     adata_raw, _ = load_and_prep_data(raw_file, annot_file, debug)
 
-    # 2. Pseudobulk Aggregation
-    logger.info("Aggregating data by sample_id and cell_label...")
-    pb_adata = sc.get.aggregate(adata_raw, by=["sample_id", "cell_label"], func="sum")
+    for modal_full, modal_short in VAR_MODAL_DICT.items():
+        # subset for the modality
+        logger.info(f"Subsetting anndata by modality: {modal_short}")
+        modality_list = MODAL_TYPES_DICT.get(modal_short)
+        adata_modal = adata_raw[
+            adata_raw.obs.modality.isin(modality_list), adata_raw.var.modality == modal_full
+        ].copy()
+        logger.debug(
+            peek_anndata(adata_modal, f"subsetted anndata {modal_short}", debug)
+        )
+        # Pseudobulk Aggregation
+        logger.info("Aggregating data by sample_id and cell_label...")
+        pb_adata = sc.get.aggregate(
+            adata_modal, by=["sample_id", "cell_label"], func="sum"
+        )
+        logger.debug(peek_anndata(pb_adata, "Pseudobulked AnnData", debug))
 
-    if debug:
-        peek_anndata(pb_adata, "Pseudobulked AnnData", debug)
+        # 3. Process each Cell Type
+        unique_cell_types = pb_adata.obs["cell_label"].unique()
+        logger.info(
+            f"Processing {len(unique_cell_types)} cell types: {unique_cell_types}"
+        )
 
-    # 3. Process each Cell Type
-    unique_cell_types = pb_adata.obs["cell_label"].unique()
-    logger.info(f"Processing {len(unique_cell_types)} cell types: {unique_cell_types}")
+        for ct in unique_cell_types:
+            logger.info(f"--- Processing Cell Type: {ct} ---")
+            ct_data = pb_adata[pb_adata.obs["cell_label"] == ct].copy()
 
-    for ct in unique_cell_types:
-        logger.info(f"--- Processing Cell Type: {ct} ---")
-        ct_data = pb_adata[pb_adata.obs["cell_label"] == ct].copy()
-
-        for modal_full, modal_short in VAR_MODAL_DICT.items():
             process_modality(
                 ct_data=ct_data,
-                raw_full_obs=adata_raw.obs,
+                non_pb_obs=adata_modal.obs,
                 ct=ct,
-                modal_full=modal_full,
                 modal_short=modal_short,
-                modal_types=MODAL_TYPES_DICT.get(modal_short),
                 output_dir=quants_dir,
                 project_name=args.project,
+                verbose=debug,
             )
 
 
