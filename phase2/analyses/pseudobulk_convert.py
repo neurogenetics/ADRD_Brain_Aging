@@ -48,6 +48,13 @@ def parse_args():
         default=DEFAULT_WRK_DIR,
         help="Base working directory.",
     )
+    parser.add_argument(
+        "--aggregate-type",
+        type=str,
+        default="sum",
+        choices=["mean", "sum"],
+        help="Type of pseudobulk aggregatioin to use.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -161,6 +168,7 @@ def process_modality(
 def main():
     args = parse_args()
     debug = args.debug
+    aggr_type = args.aggregate_type
 
     # Setup directories
     work_dir = Path(args.work_dir)
@@ -200,28 +208,59 @@ def main():
         logger.debug(
             peek_anndata(adata_modal, f"subsetted anndata {modal_short}", debug)
         )
-        # Pseudobulk Aggregation
-        logger.info("Aggregating data by sample_id and cell_label...")
-        pb_adata = sc.get.aggregate(
-            adata_modal, by=["sample_id", "cell_label"], func="sum"
-        )
-        logger.debug(peek_anndata(pb_adata, "Pseudobulked AnnData", debug))
 
-        # Reset X to raw sums
-        pb_adata.X = pb_adata.layers["sum"].copy()
+        if aggr_type == "mean":
+            # Normalize
+            # RNA: CPM + Log1p | ATAC: RPM + Log1p
+            # Suppress warning about zero-count cells (intentionally masked)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Some cells have zero counts",
+                    category=UserWarning,
+                )
+                sc.pp.normalize_total(
+                    adata_modal,
+                    target_sum=TARGET_SUM_NORM,
+                    exclude_highly_expressed=True,
+                )
 
-        # Normalize
-        # RNA: CPM + Log1p | ATAC: RPM + Log1p
-        # Suppress warning about zero-count cells (intentionally masked)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message="Some cells have zero counts", category=UserWarning
+            sc.pp.log1p(adata_modal)
+
+            # Pseudobulk Aggregation
+            logger.info("Mean aggregating data by sample_id and cell_label using...")
+            pb_adata = sc.get.aggregate(
+                adata_modal, by=["sample_id", "cell_label"], func="mean"
             )
-            sc.pp.normalize_total(
-                pb_adata, target_sum=TARGET_SUM_NORM, exclude_highly_expressed=True
-            )
+            logger.debug(peek_anndata(pb_adata, "Pseudobulked AnnData", debug))
 
-        sc.pp.log1p(pb_adata)
+            # Reset X to raw sums
+            pb_adata.X = pb_adata.layers["mean"].copy()
+        elif aggr_type == "sum":
+            # Pseudobulk Aggregation
+            logger.info("Sum aggregating data by sample_id and cell_label...")
+            pb_adata = sc.get.aggregate(
+                adata_modal, by=["sample_id", "cell_label"], func="sum"
+            )
+            logger.debug(peek_anndata(pb_adata, "Pseudobulked AnnData", debug))
+
+            # Reset X to raw sums
+            pb_adata.X = pb_adata.layers["sum"].copy()
+
+            # Normalize
+            # RNA: CPM + Log1p | ATAC: RPM + Log1p
+            # Suppress warning about zero-count cells (intentionally masked)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Some cells have zero counts",
+                    category=UserWarning,
+                )
+                sc.pp.normalize_total(
+                    pb_adata, target_sum=TARGET_SUM_NORM, exclude_highly_expressed=True
+                )
+
+            sc.pp.log1p(pb_adata)
 
         if debug:
             logger.debug(
