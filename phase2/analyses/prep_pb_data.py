@@ -151,7 +151,9 @@ def generate_latent_features(
     # since these samples were intentionally masked for low cell counts
     clean_quants = candidate_quants.dropna()
     dropped_count = candidate_quants.shape[0] - clean_quants.shape[0]
-    logger.info(f"Dropped {dropped_count} samples with missing values. Cleaned DataFrame shape: {clean_quants.shape}")
+    logger.info(
+        f"Dropped {dropped_count} samples with missing values. Cleaned DataFrame shape: {clean_quants.shape}"
+    )
 
     # Regress out known covariates effects before determining variance and PCA
     # This ensures PCA captures true unknown variation, not variance driven by the target covariate
@@ -520,7 +522,7 @@ def main():
     residuals_df = perform_regression_correction(
         ext_data_df[feature_cols],
         ext_data_df,
-        [x for x in final_covariates if x != "age"],
+        pca_df.columns.tolist(),
         debug,
     )
 
