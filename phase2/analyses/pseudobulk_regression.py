@@ -1,13 +1,9 @@
 import argparse
 import logging
-import random
-import warnings
-from multiprocessing import Process
 from pathlib import Path
 import sys
 
 import numpy as np
-import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from pandas import DataFrame as PandasDF
@@ -53,8 +49,14 @@ def parse_args():
         "--regression-type",
         type=str,
         default="ols",
-        choices=["ols", "rlm", "glm", "glm_tweedie"],
+        choices=["ols", "rlm", "glm", "glm_tweedie", "wls"],
         help="Regression method to use.",
+    )
+    parser.add_argument(
+        "--wls-weight-term",
+        type=str,
+        default="cell_counts",
+        help="Covariate term to be used for weights in WLS regression.",
     )
     parser.add_argument(
         "--covariates",
@@ -105,7 +107,9 @@ def load_quants(
     return quants_df
 
 
-def regression_model(formula: str, df: PandasDF, model_type: str = "ols"):
+def regression_model(
+    formula: str, df: PandasDF, model_type: str = "ols", weight_term: str = None
+):
     if model_type == "ols":
         model = smf.ols(formula=formula, data=df)
         result = model.fit(cov_type="HC3")
@@ -124,16 +128,28 @@ def regression_model(formula: str, df: PandasDF, model_type: str = "ols"):
     elif model_type == "glm":
         model = smf.glm(formula=formula, data=df)
         result = model.fit()
+    elif model_type == "wls":
+        model = smf.wls(formula=formula, data=df, weights=df[weight_term])
+        result = model.fit()
     return result
 
 
 def age_regression(
-    df: PandasDF, feature: str, regression_type: str, verbose: bool = False
+    df: PandasDF,
+    feature: str,
+    regression_type: str,
+    verbose: bool = False,
+    weight_term: str = None,
+    formula_covariates: list = None,
 ) -> list:
     endo_term = feature
     exog_term = "age"
 
-    covariates = [x for x in df.columns.tolist() if x not in [endo_term, exog_term]]
+    if formula_covariates is None:
+        covariates = [x for x in df.columns.tolist() if x not in [endo_term, exog_term]]
+    else:
+        covariates = formula_covariates
+
     if len(covariates) > 0:
         covar_term_formula = " + ".join(covariates)
         this_formula = f'Q("{endo_term}") ~ {exog_term} + {covar_term_formula}'
@@ -146,6 +162,7 @@ def age_regression(
             this_formula,
             df,
             model_type=regression_type,
+            weight_term=weight_term,
         )
         ret_list = [
             endo_term,
@@ -193,6 +210,7 @@ def regress_age(
     project: str,
     covariate_type: str,
     covariates_list: list = None,
+    wls_weight_term: str = None,
 ) -> None:
     logger.info(f"Starting regression for {cell_name} using {regression_type}")
 
@@ -208,15 +226,27 @@ def regress_age(
         terms = ["age"] + [x for x in covars.columns.tolist() if x.startswith("PCA_")]
     elif covariate_type == "specified":
         if not covariates_list:
-            raise ValueError("--covariates-list must be provided when using --covariates specified")
+            raise ValueError(
+                "--covariates-list must be provided when using --covariates specified"
+            )
         terms = ["age"] + [x for x in covariates_list if x != "age"]
     else:
         raise ValueError(f"Unknown covariate_type: {covariate_type}")
 
+    formula_covariates = [x for x in terms if x != "age"]
+
+    if regression_type == "wls" and wls_weight_term:
+        if wls_weight_term in formula_covariates:
+            formula_covariates.remove(wls_weight_term)
+        if wls_weight_term not in terms:
+            terms.append(wls_weight_term)
+
     # Ensure all terms exist in the dataframe
     missing_terms = [x for x in terms if x not in covars.columns]
     if missing_terms:
-        raise ValueError(f"The following specified covariates are missing from the data: {missing_terms}")
+        raise ValueError(
+            f"The following specified covariates are missing from the data: {missing_terms}"
+        )
 
     logger.info(f"Independent variable and covariates terms used: {terms}")
     data_df = quants.merge(
@@ -232,7 +262,13 @@ def regress_age(
     type_results = []
     for i, feature in enumerate(features):
         type_results.append(
-            age_regression(data_df[[feature] + terms], feature, regression_type)
+            age_regression(
+                data_df[[feature] + terms],
+                feature,
+                regression_type,
+                weight_term=wls_weight_term,
+                formula_covariates=formula_covariates,
+            )
         )
         if (i + 1) % 1000 == 0:
             print(f"Processed {i + 1}/{len(features)}...", end="\r")
@@ -322,7 +358,9 @@ def main():
         project,
         args.covariates,
         args.covariates_list,
+        args.wls_weight_term,
     )
+
 
 if __name__ == "__main__":
     main()
