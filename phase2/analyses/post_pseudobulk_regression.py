@@ -46,7 +46,7 @@ def parse_args():
         "--regression-type",
         type=str,
         default="ols",
-        choices=["ols", "glm", "glm_tweedie", "rlm", "wls"],
+        choices=["ols", "glm", "glm_tweedie", "rlm", "wls", "vwrlm"],
         help="Regression method to use.",
     )
     parser.add_argument(

@@ -9,6 +9,7 @@ import statsmodels.formula.api as smf
 from pandas import DataFrame as PandasDF
 from pandas import read_csv, read_parquet
 import statsmodels.stats.multitest as smm
+from patsy import dmatrices
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def parse_args():
         "--regression-type",
         type=str,
         default="ols",
-        choices=["ols", "rlm", "glm", "glm_tweedie", "wls"],
+        choices=["ols", "rlm", "glm", "glm_tweedie", "wls", "vwrlm"],
         help="Regression method to use.",
     )
     parser.add_argument(
@@ -108,7 +109,10 @@ def load_quants(
 
 
 def regression_model(
-    formula: str, df: PandasDF, model_type: str = "ols", weight_term: str = None
+    formula: str,
+    df: PandasDF,
+    model_type: str = "ols",
+    weight_term: str = None,
 ):
     if model_type == "ols":
         model = smf.ols(formula=formula, data=df)
@@ -130,6 +134,22 @@ def regression_model(
         result = model.fit()
     elif model_type == "wls":
         model = smf.wls(formula=formula, data=df, weights=df[weight_term])
+        result = model.fit()
+    elif model_type == "vwrlm":
+        # Ensure formula parses correctly (handling the 'Q("...")' wrapper from age_regression)
+        y, X = dmatrices(formula, data=df, return_type="dataframe")
+        # Ensure weights are a Series
+        sqrt_w = np.sqrt(df[weight_term])
+
+        # dmatrices returns the dependent variable dataframe, extract it as Series
+        # Since we use Q("feature_name"), the column in y might be named literally 'Q("feature_name")'
+        # To be safe, we can just use y.iloc[:, 0]
+        y_weighted = y.iloc[:, 0] * sqrt_w
+
+        # Multiply all exog features by the weight
+        X_weighted = X.multiply(sqrt_w, axis=0)
+
+        model = sm.RLM(endog=y_weighted, exog=X_weighted, M=sm.robust.norms.HuberT())
         result = model.fit()
     return result
 
@@ -235,7 +255,7 @@ def regress_age(
 
     formula_covariates = [x for x in terms if x != "age"]
 
-    if regression_type == "wls" and wls_weight_term:
+    if regression_type in ["wls", "vwrlm"] and wls_weight_term:
         if wls_weight_term in formula_covariates:
             formula_covariates.remove(wls_weight_term)
         if wls_weight_term not in terms:

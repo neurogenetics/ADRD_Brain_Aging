@@ -23,7 +23,7 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # run the age regression analysis per cell-type
-REGRESSTYPES="wls ols rlm"
+REGRESSTYPES="wls ols rlm vwrlm"
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
     phase2/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
