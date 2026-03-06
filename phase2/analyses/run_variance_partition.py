@@ -2,7 +2,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from pandas import DataFrame, read_csv, read_parquet
+from pandas import DataFrame, read_csv, read_parquet, Series
 import statsmodels.formula.api as smf
 import concurrent.futures
 import seaborn as sns
@@ -112,53 +112,86 @@ def load_quantified_data(
     return quants_df
 
 
-def check_pcas_against_known_covariates(
+def check_all_pairwise_covariate_correlations(
     data_df: DataFrame,
     pca_cols: list[str],
     covariate_cols: list[str],
     out_prefix: Path = None,
     plot_title_suffix: str = "",
 ):
-    covar_formula = " + ".join(covariate_cols)
+    import pandas as pd
+    import re
+    
+    # We want ALL pairwise combinations between ALL specified columns.
+    all_cols = list(set(pca_cols + covariate_cols))
+    
+    # Extract only the relevant columns to avoid dummy-coding the massive quantifications
+    # Also drop columns that are not in data_df (just in case)
+    valid_cols = [c for c in all_cols if c in data_df.columns]
+    sub_df = data_df[valid_cols].copy()
+    
+    # Convert categorical to dummy variables so they can be on LHS and RHS
+    # drop_first=True prevents perfect collinearity
+    sub_df_dummy = pd.get_dummies(sub_df, drop_first=True, dtype=float)
+    
+    # Clean up column names so Patsy doesn't complain (e.g., spaces, dashes)
+    def clean_name(name):
+        return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    
+    new_cols = {c: clean_name(c) for c in sub_df_dummy.columns}
+    sub_df_dummy.rename(columns=new_cols, inplace=True)
+    
+    dummy_cols = list(sub_df_dummy.columns)
+    
     z_scores_list = []
 
-    for pca in pca_cols:
-        this_formula = f"{pca} ~ {covar_formula}"
-        tvals = fit_and_report_correlation(
-            data_df,
-            this_formula,
-            f"check if {pca} correlated with known covariates",
-            return_tvalues=True,
-        )
+    for y_col in dummy_cols:
+        tvals_for_y = {}
+        for x_col in dummy_cols:
+            if y_col == x_col:
+                tvals_for_y[x_col] = float('nan')
+                continue
+                
+            this_formula = f"{y_col} ~ {x_col}"
+            
+            tvals = fit_and_report_correlation(
+                sub_df_dummy,
+                this_formula,
+                f"check if {y_col} correlated with {x_col}",
+                return_tvalues=True,
+            )
 
-        if tvals is not None:
-            tvals.name = pca
-            z_scores_list.append(tvals)
+            # Extract the t-value for x_col (handling both regular and Intercept)
+            if tvals is not None and x_col in tvals:
+                tvals_for_y[x_col] = tvals[x_col]
+            else:
+                tvals_for_y[x_col] = float('nan')
+
+        if tvals_for_y:
+            tvals_series = Series(tvals_for_y, name=y_col)
+            z_scores_list.append(tvals_series)
 
     if out_prefix and z_scores_list:
         try:
-            # Create DataFrame: rows = PCAs, cols = Covariates
+            # Create DataFrame
             z_df = DataFrame(z_scores_list)
-
-            # Drop Intercept if present
-            if "Intercept" in z_df.columns:
-                z_df = z_df.drop(columns=["Intercept"])
+            
+            # Make sure rows and columns are sorted identically for a clean square matrix
+            z_df = z_df[dummy_cols].loc[dummy_cols]
 
             # Create the heatmap
-            plt.figure(figsize=(12, 10))
+            plt.figure(figsize=(16, 14))
             # Use a diverging colormap, centering at 0
             sns.heatmap(z_df, cmap="RdBu_r", center=0, annot=True, fmt=".2f")
             plt.title(
-                f"Z-statistics: PCA Components vs Known Covariates\n{plot_title_suffix}"
+                f"Z-statistics: All Covariates Pairwise\n{plot_title_suffix}"
             )
-            plt.xlabel("Known Covariates")
-            plt.ylabel("PCA Components")
             plt.tight_layout()
 
-            out_file = f"{out_prefix}_pca_covar_heatmap.png"
+            out_file = f"{out_prefix}_all_covar_heatmap.png"
             plt.savefig(out_file)
             plt.close()
-            logger.info(f"Saved PCA-Covariate heatmap to {out_file}")
+            logger.info(f"Saved All Covariates pairwise heatmap to {out_file}")
 
         except Exception as e:
             logger.warning(f"Failed to generate heatmap: {e}")
@@ -397,7 +430,7 @@ def main():
             x for x in (fixed_effects + random_effects) if x in ext_data_df.columns
         ]
 
-        check_pcas_against_known_covariates(
+        check_all_pairwise_covariate_correlations(
             ext_data_df,
             pca_cols,
             known_covariates,
