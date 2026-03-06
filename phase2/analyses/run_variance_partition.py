@@ -3,7 +3,6 @@ import logging
 import sys
 from pathlib import Path
 from pandas import DataFrame, read_csv, read_parquet, Series
-import statsmodels.formula.api as smf
 import concurrent.futures
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -121,39 +120,39 @@ def check_all_pairwise_covariate_correlations(
 ):
     import pandas as pd
     import re
-    
+
     # We want ALL pairwise combinations between ALL specified columns.
     all_cols = list(set(pca_cols + covariate_cols))
-    
+
     # Extract only the relevant columns to avoid dummy-coding the massive quantifications
     # Also drop columns that are not in data_df (just in case)
     valid_cols = [c for c in all_cols if c in data_df.columns]
     sub_df = data_df[valid_cols].copy()
-    
+
     # Convert categorical to dummy variables so they can be on LHS and RHS
     # drop_first=True prevents perfect collinearity
     sub_df_dummy = pd.get_dummies(sub_df, drop_first=True, dtype=float)
-    
+
     # Clean up column names so Patsy doesn't complain (e.g., spaces, dashes)
     def clean_name(name):
-        return re.sub(r'[^a-zA-Z0-9_]', '_', name)
-    
+        return re.sub(r"[^a-zA-Z0-9_]", "_", name)
+
     new_cols = {c: clean_name(c) for c in sub_df_dummy.columns}
     sub_df_dummy.rename(columns=new_cols, inplace=True)
-    
-    dummy_cols = list(sub_df_dummy.columns)
-    
+
+    dummy_cols = sorted(list(sub_df_dummy.columns))
+
     z_scores_list = []
 
     for y_col in dummy_cols:
         tvals_for_y = {}
         for x_col in dummy_cols:
             if y_col == x_col:
-                tvals_for_y[x_col] = float('nan')
+                tvals_for_y[x_col] = float("nan")
                 continue
-                
+
             this_formula = f"{y_col} ~ {x_col}"
-            
+
             tvals = fit_and_report_correlation(
                 sub_df_dummy,
                 this_formula,
@@ -165,7 +164,7 @@ def check_all_pairwise_covariate_correlations(
             if tvals is not None and x_col in tvals:
                 tvals_for_y[x_col] = tvals[x_col]
             else:
-                tvals_for_y[x_col] = float('nan')
+                tvals_for_y[x_col] = float("nan")
 
         if tvals_for_y:
             tvals_series = Series(tvals_for_y, name=y_col)
@@ -175,7 +174,7 @@ def check_all_pairwise_covariate_correlations(
         try:
             # Create DataFrame
             z_df = DataFrame(z_scores_list)
-            
+
             # Make sure rows and columns are sorted identically for a clean square matrix
             z_df = z_df[dummy_cols].loc[dummy_cols]
 
@@ -183,9 +182,7 @@ def check_all_pairwise_covariate_correlations(
             plt.figure(figsize=(16, 14))
             # Use a diverging colormap, centering at 0
             sns.heatmap(z_df, cmap="RdBu_r", center=0, annot=True, fmt=".2f")
-            plt.title(
-                f"Z-statistics: All Covariates Pairwise\n{plot_title_suffix}"
-            )
+            plt.title(f"test-statistics: All Covariates Pairwise\n{plot_title_suffix}")
             plt.tight_layout()
 
             out_file = f"{out_prefix}_all_covar_heatmap.png"
