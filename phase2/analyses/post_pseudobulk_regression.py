@@ -1,6 +1,5 @@
 import argparse
 import logging
-import warnings
 from pathlib import Path
 import sys
 
