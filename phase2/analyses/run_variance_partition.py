@@ -158,6 +158,7 @@ def check_all_pairwise_covariate_correlations(
                 this_formula,
                 f"check if {y_col} correlated with {x_col}",
                 return_tvalues=True,
+                verbose=False,
             )
 
             # Extract the t-value for x_col (handling both regular and Intercept)
@@ -252,9 +253,12 @@ def process_variance_results(
         )
 
         # Optionally describe the overall distribution
-        print("\n--- Summary of Variance Explained ---")
+        logger.info("\n--- Summary of Variance Explained ---")
         summary_stats = variance_fractions_df.describe()
-        print(summary_stats)
+        summary_stats = variance_fractions_df.mean()
+        logger.info(f"\n{summary_stats}")
+        out_csv = f"{out_prefix}_variance_partition{suffix}.csv"
+        variance_fractions_df.to_csv(out_csv)
 
         if out_prefix:
             try:
@@ -306,8 +310,15 @@ def main():
     args = parse_args()
     debug = args.debug
 
+    # Setup directories
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    figs_dir = work_dir / "figures"
+    logs_dir = work_dir / "logs"
+
     # Configure logging to file
-    log_filename = f"{args.cell_type}_{args.modality}_variance_partition.log"
+    log_filename = f"{logs_dir}/{args.cell_type}_{args.modality}_variance_partition.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -316,12 +327,6 @@ def main():
     )
     logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
-
-    # Setup directories
-    work_dir = Path(args.work_dir)
-    quants_dir = work_dir / "quants"
-    info_dir = work_dir / "sample_info"
-    figs_dir = work_dir / "figures"
 
     # Ensure directories exist
     figs_dir.mkdir(parents=True, exist_ok=True)
@@ -358,7 +363,7 @@ def main():
     if modality == "atac":
         check_covariates.append("label_probs")
 
-    check_correlations(data_df, "age", check_covariates)
+    check_correlations(data_df, "age", check_covariates, verbose=True)
 
     fixed_effects = ["age", "bmi", "pmi", "ph", "cell_counts"]
     if modality == "atac":
@@ -378,8 +383,6 @@ def main():
     )
 
     if final_covars_df is not None:
-        logger.info("--- Starting Final Variance Partition (Known + PCA) ---")
-
         # Merge final covariates with quant data
         # Note: final_covars_df likely includes known covariates + PCA + possibly other columns
         # We need to make sure we don't duplicate columns if we merge
@@ -435,11 +438,27 @@ def main():
             title_suffix,
         )
 
+        logger.info("--- Starting Second Variance Partition (unknowns) ---")
+        # run the variance partition for all covariates known and unknown
+        results_unknowns = run_variance_partition_parallel(
+            ext_data_df,
+            quants_df.columns.tolist(),
+            pca_cols,
+            [],
+            debug,
+        )
+
+        process_variance_results(
+            results_unknowns, out_figure_path, "_unknowns", debug, title_suffix
+        )
+
+        logger.info("--- Starting Final Variance Partition (known + unknown) ---")
         # Prepare lists for variance partition
         final_fixed_effects = fixed_effects + pca_cols
         final_random_effects = random_effects
 
-        results_final = run_variance_partition_parallel(
+        # run the variance partition for all covariates known and unknown
+        results_all = run_variance_partition_parallel(
             ext_data_df,
             quants_df.columns.tolist(),
             final_fixed_effects,
@@ -448,7 +467,7 @@ def main():
         )
 
         process_variance_results(
-            results_final, out_figure_path, "_final", debug, title_suffix
+            results_all, out_figure_path, "_all", debug, title_suffix
         )
 
 
