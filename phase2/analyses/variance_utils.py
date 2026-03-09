@@ -282,15 +282,18 @@ def fit_and_report_correlation(
     formula: str,
     description: str,
     return_tvalues: bool = False,
+    verbose: bool = False,
 ):
     """
     Helper to fit a linear regression and report results.
     """
-    logger.info(f"--- {description}: {formula} ---")
+    if verbose:
+        logger.info(f"--- {description}: {formula} ---")
     try:
         model = smf.ols(formula=formula, data=data_df)
         result = model.fit()
-        logger.info(result.summary())
+        if verbose:
+            logger.info(result.summary())
         if return_tvalues:
             return result.tvalues
     except Exception as e:
@@ -303,10 +306,11 @@ def check_correlations(
     target_var: str,
     covariates: list[str],
     description: str = "check correlations",
+    verbose: bool = False,
 ):
     """
     Checks if a target variable is correlated with a list of covariates.
     """
     covar_term_formula = " + ".join(covariates)
     this_formula = f"{target_var} ~ {covar_term_formula}"
-    fit_and_report_correlation(data_df, this_formula, description)
+    fit_and_report_correlation(data_df, this_formula, description, verbose)
