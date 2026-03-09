@@ -23,7 +23,7 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # run the age regression analysis per cell-type
-REGRESSTYPES="wls ols rlm vwrlm"
+REGRESSTYPES="wls vwrlm ols rlm"
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
     phase2/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
@@ -35,4 +35,9 @@ for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
     uv run phase2/analyses/post_pseudobulk_regression.py --modality ${MODALITY} --regression-type ${REGRESSTYPE} --no-volcano-per-celltype
   done
+done
+
+# check the general regression against the robust to check for outlier driven results
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/analyses/filter_regression_type_differences.py --modality ${MODALITY}
 done
