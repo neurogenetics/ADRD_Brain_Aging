@@ -1,0 +1,272 @@
+import argparse
+import logging
+from pathlib import Path
+import sys
+
+import numpy as np
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from pandas import DataFrame as PandasDF
+from pandas import read_csv, read_parquet
+import statsmodels.stats.multitest as smm
+
+# Import functions from pseudobulk_regression
+from pseudobulk_regression import regression_model, compute_fdr, load_final_covariates, load_quants
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PROJECT = "aging_phase2"
+DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run cis correlation analysis.")
+    parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
+    parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
+    parser.add_argument("--cell-type", type=str, required=True)
+    parser.add_argument("--regression-type", type=str, default="vwrlm", choices=["ols", "rlm", "glm", "glm_tweedie", "wls", "vwrlm"])
+    parser.add_argument("--age-regression-type", type=str, default=None, help="Regression type used for age filtering. Defaults to --regression-type.")
+    parser.add_argument("--wls-weight-term", type=str, default="cell_counts_endo")
+    parser.add_argument("--covariates", type=str, default="all", choices=["none", "all", "knowns", "unknowns", "specified"])
+    parser.add_argument("--covariates-list", type=str, nargs="+")
+    parser.add_argument("--endo-modality", type=str, default="rna")
+    parser.add_argument("--exog-modality", type=str, default="atac")
+    parser.add_argument("--max-dist", type=int, default=1_000_000)
+    parser.add_argument("--fdr-threshold", type=float, default=0.05)
+    parser.add_argument("--debug", action="store_true")
+    return parser.parse_args()
+
+def cis_regression(df: PandasDF, endo_term: str, exog_term: str, formula_covariates: list, regression_type: str, weight_term: str = None, verbose: bool = False):
+    if len(formula_covariates) > 0:
+        covar_term_formula = " + ".join(formula_covariates)
+        this_formula = f'Q("{endo_term}") ~ Q("{exog_term}") + {covar_term_formula}'
+    else:
+        this_formula = f'Q("{endo_term}") ~ Q("{exog_term}")'
+        
+    try:
+        result = regression_model(
+            this_formula,
+            df,
+            model_type=regression_type,
+            weight_term=weight_term,
+        )
+        ret_exog_term = f'Q("{exog_term}")'
+        ret_list = [
+            endo_term,
+            exog_term,
+            result.params["Intercept"],
+            result.params[ret_exog_term],
+            result.bse[ret_exog_term],
+            result.tvalues[ret_exog_term],
+            result.pvalues[ret_exog_term],
+        ]
+        if verbose:
+            logger.debug(f"Success for {endo_term} and {exog_term}")
+        return ret_list
+    except Exception as e:
+        if verbose:
+            logger.debug(f"Caught error for {endo_term} and {exog_term}: {e}")
+        return [endo_term, exog_term] + [np.nan] * 5
+
+def main():
+    args = parse_args()
+    
+    if args.age_regression_type is None:
+        args.age_regression_type = args.regression_type
+
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    results_dir = work_dir / "results"
+    logs_dir = work_dir / "logs"
+
+    log_filename = f"{logs_dir}/{args.cell_type}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_cis_correlation.log"
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
+        force=True,
+    )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
+    
+    # Load features
+    features_file = quants_dir / f"{args.project}.features.csv"
+    logger.info(f"Loading features from {features_file}")
+    features_df = read_csv(features_file, index_col=0)
+
+    # Load endo results
+    endo_results_file = results_dir / f"{args.project}.{args.endo_modality}.{args.cell_type}.{args.age_regression_type}.age.csv"
+    if not endo_results_file.exists():
+        # Fallback if old format: project.endo_modality.cell_type.regression.age.csv vs project.cell_type.endo_modality.etc
+        # Let's try matching what pseudobulk_regression outputs
+        endo_results_file_alt = results_dir / f"{args.project}.{args.cell_type}.{args.endo_modality}.{args.age_regression_type}.age.csv"
+        if endo_results_file_alt.exists():
+            endo_results_file = endo_results_file_alt
+            
+    logger.info(f"Loading endo results from {endo_results_file}")
+    endo_results = read_csv(endo_results_file)
+    endo_results = endo_results[endo_results['bh_fdr_tissue'] < args.fdr_threshold]
+    
+    # Load exog results
+    exog_results_file = results_dir / f"{args.project}.{args.exog_modality}.{args.cell_type}.{args.age_regression_type}.age.csv"
+    if not exog_results_file.exists():
+        exog_results_file_alt = results_dir / f"{args.project}.{args.cell_type}.{args.exog_modality}.{args.age_regression_type}.age.csv"
+        if exog_results_file_alt.exists():
+            exog_results_file = exog_results_file_alt
+
+    logger.info(f"Loading exog results from {exog_results_file}")
+    exog_results = read_csv(exog_results_file)
+    exog_results = exog_results[exog_results['bh_fdr_tissue'] < args.fdr_threshold]
+
+    valid_endo = [f for f in endo_results['feature'] if f in features_df.index]
+    valid_exog = [f for f in exog_results['feature'] if f in features_df.index]
+    
+    endo_features = features_df.loc[valid_endo].copy()
+    exo_features = features_df.loc[valid_exog].copy()
+
+    logger.info(f"Found {len(endo_features)} significant endo features and {len(exo_features)} significant exog features.")
+
+    # Find cis-proximal
+    logger.info("Finding cis-proximal pairs...")
+    endo_cis_proximal = {}
+    exo_unique = set()
+    
+    # If the user has duplicates in gene index, handle gracefully (take first match)
+    if not endo_features.index.is_unique:
+        endo_features = endo_features[~endo_features.index.duplicated(keep='first')]
+    if not exo_features.index.is_unique:
+        exo_features = exo_features[~exo_features.index.duplicated(keep='first')]
+
+    for chrom in endo_features['chr'].unique():
+        chrom_endo = endo_features[endo_features['chr'] == chrom]
+        chrom_exo = exo_features[exo_features['chr'] == chrom]
+        if chrom_exo.empty:
+            continue
+        for endo_id, endo_row in chrom_endo.iterrows():
+            start_boundary = np.maximum(endo_row['start'] - args.max_dist, chrom_exo['start'].min())
+            end_boundary = np.minimum(endo_row['end'] + args.max_dist, chrom_exo['end'].max())
+            
+            found_df = chrom_exo[(chrom_exo['start'] >= start_boundary) & (chrom_exo['end'] <= end_boundary)]
+            if not found_df.empty:
+                endo_cis_proximal[endo_id] = found_df.index.tolist()
+                exo_unique.update(found_df.index.tolist())
+
+    total_comparisons = sum(len(v) for v in endo_cis_proximal.values())
+    logger.info(f"Identified {len(endo_cis_proximal)} endo features with {total_comparisons} total pairs to test.")
+
+    if total_comparisons == 0:
+        logger.info("No valid cis pairs found. Exiting.")
+        return
+
+    # Load quants
+    logger.info("Loading quantifications...")
+    endo_quants = load_quants(quants_dir, args.project, args.cell_type, args.endo_modality, args.debug)
+    exog_quants = load_quants(quants_dir, args.project, args.cell_type, args.exog_modality, args.debug)
+
+    # Load covariates
+    logger.info("Loading covariates...")
+    endo_covars = load_final_covariates(info_dir, args.project, args.cell_type, args.endo_modality, args.debug)
+    exog_covars = load_final_covariates(info_dir, args.project, args.cell_type, args.exog_modality, args.debug)
+
+    # Merge covariates
+    common_bio_cols = ['age', 'bmi', 'pmi', 'ph', 'sex', 'ancestry', 'smoker', 'pool']
+    base_cols = [c for c in common_bio_cols if c in endo_covars.columns and c in exog_covars.columns]
+
+    endo_spec = [c for c in endo_covars.columns if c not in base_cols]
+    exog_spec = [c for c in exog_covars.columns if c not in base_cols]
+
+    covars = endo_covars[base_cols].copy()
+    for c in endo_spec:
+        covars[f"{c}_endo"] = endo_covars[c]
+    for c in exog_spec:
+        covars[f"{c}_exog"] = exog_covars[c]
+
+    # Intersect indices
+    common_idx = covars.index.intersection(endo_quants.index).intersection(exog_quants.index)
+    logger.info(f"Number of common samples: {len(common_idx)}")
+    covars = covars.loc[common_idx]
+    endo_quants = endo_quants.loc[common_idx]
+    exog_quants = exog_quants.loc[common_idx]
+
+    data_df = covars.copy()
+    
+    # Avoid merging entire quants if they are large; subset to what we need
+    endo_cols_to_keep = [c for c in endo_cis_proximal.keys() if c in endo_quants.columns]
+    exog_cols_to_keep = [c for c in exo_unique if c in exog_quants.columns]
+    
+    data_df = data_df.join(endo_quants[endo_cols_to_keep])
+    # Ignore overlap errors by explicitly picking columns not in data_df
+    exog_cols_clean = [c for c in exog_cols_to_keep if c not in data_df.columns]
+    data_df = data_df.join(exog_quants[exog_cols_clean])
+
+    # Determine covariates
+    if args.covariates == "none":
+        formula_covariates = []
+    elif args.covariates == "all":
+        formula_covariates = covars.columns.tolist()
+    elif args.covariates == "knowns":
+        formula_covariates = [x for x in covars.columns if not ("PCA_" in x)]
+    elif args.covariates == "unknowns":
+        formula_covariates = base_cols + [x for x in covars.columns if ("PCA_" in x)]
+    elif args.covariates == "specified":
+        if not args.covariates_list:
+            raise ValueError("--covariates-list must be provided when using --covariates specified")
+        formula_covariates = args.covariates_list
+
+    if args.regression_type in ["wls", "vwrlm"] and args.wls_weight_term:
+        if args.wls_weight_term in formula_covariates:
+            formula_covariates.remove(args.wls_weight_term)
+        if args.wls_weight_term not in data_df.columns:
+            raise ValueError(f"wls_weight_term '{args.wls_weight_term}' not found in covariates.")
+
+    logger.info(f"Covariates included in formula: {formula_covariates}")
+
+    # Run regressions
+    logger.info(f"Starting {args.regression_type} regression...")
+    results = []
+    
+    counter = 0
+    for endo_term, exos in endo_cis_proximal.items():
+        if endo_term not in data_df.columns:
+            continue
+        for exog_term in exos:
+            if exog_term not in data_df.columns:
+                continue
+                
+            res = cis_regression(
+                data_df, 
+                endo_term, 
+                exog_term, 
+                formula_covariates, 
+                args.regression_type, 
+                args.wls_weight_term,
+                args.debug
+            )
+            results.append(res)
+            
+            counter += 1
+            if counter % 1000 == 0:
+                print(f"Processed {counter}/{total_comparisons}...", end="\r")
+
+    print("\nProcessing complete.")
+
+    if not results:
+        logger.info("No successful regressions. Exiting.")
+        return
+
+    results_df = PandasDF(
+        data=results,
+        columns=["endo_feature", "exog_feature", "intercept", "coef", "stderr", "z", "p-value"]
+    )
+    
+    results_df["bh_fdr"] = compute_fdr(results_df["p-value"].fillna(1))
+    results_df["tissue"] = args.cell_type
+
+    total_sig = results_df.loc[results_df["bh_fdr"] <= 0.05].shape[0]
+    logger.info(f"Found {total_sig} significant cis pairs (FDR <= 0.05)")
+
+    out_file = results_dir / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.cell_type}.{args.regression_type}.cis.csv"
+    results_df.to_csv(out_file, index=False)
+    logger.info(f"Saved results to {out_file}")
+
+if __name__ == "__main__":
+    main()
