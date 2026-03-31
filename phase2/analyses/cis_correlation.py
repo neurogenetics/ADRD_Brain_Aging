@@ -236,13 +236,13 @@ def process_cell_type(
     if args.regression_type in ["wls", "vwrlm"] and args.wls_weight_term:
         if args.wls_weight_term in formula_covariates:
             formula_covariates.remove(args.wls_weight_term)
-            logger.info(
-                f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' will be used in the regression"
-            )
         if args.wls_weight_term not in data_df.columns:
             raise ValueError(
                 f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' not found in covariates."
             )
+        logger.info(
+            f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' will be used in the regression"
+        )
 
     logger.info(f"[{cell_type}] Covariates included in formula: {formula_covariates}")
 
