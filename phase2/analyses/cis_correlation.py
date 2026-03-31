@@ -1,4 +1,5 @@
 import argparse
+import concurrent.futures
 import logging
 from pathlib import Path
 import sys
@@ -88,6 +89,198 @@ def cis_regression(
         return [endo_term, exog_term] + [np.nan] * 5
 
 
+def process_cell_type(
+    cell_type,
+    ct_endo_results,
+    ct_exog_results,
+    features_df,
+    args,
+    quants_dir,
+    info_dir,
+):
+    logger.info(f"--- Processing cell type: {cell_type} ---")
+
+    valid_endo = [f for f in ct_endo_results["feature"] if f in features_df.index]
+    valid_exog = [f for f in ct_exog_results["feature"] if f in features_df.index]
+
+    endo_features = features_df.loc[valid_endo].copy()
+    exo_features = features_df.loc[valid_exog].copy()
+
+    logger.info(
+        f"[{cell_type}] Found {len(endo_features)} significant endo features and {len(exo_features)} significant exog features."
+    )
+
+    # Find cis-proximal
+    logger.info(f"[{cell_type}] Finding cis-proximal pairs...")
+    endo_cis_proximal = {}
+    exo_unique = set()
+
+    # If the user has duplicates in gene index, handle gracefully (take first match)
+    if not endo_features.index.is_unique:
+        endo_features = endo_features[~endo_features.index.duplicated(keep="first")]
+    if not exo_features.index.is_unique:
+        exo_features = exo_features[~exo_features.index.duplicated(keep="first")]
+
+    for chrom in endo_features["chr"].unique():
+        chrom_endo = endo_features[endo_features["chr"] == chrom]
+        chrom_exo = exo_features[exo_features["chr"] == chrom]
+        if chrom_exo.empty:
+            continue
+        for endo_id, endo_row in chrom_endo.iterrows():
+            start_boundary = np.maximum(
+                endo_row["start"] - args.max_dist, chrom_exo["start"].min()
+            )
+            end_boundary = np.minimum(
+                endo_row["end"] + args.max_dist, chrom_exo["end"].max()
+            )
+
+            found_df = chrom_exo[
+                (chrom_exo["start"] >= start_boundary)
+                & (chrom_exo["end"] <= end_boundary)
+            ]
+            if not found_df.empty:
+                endo_cis_proximal[endo_id] = found_df.index.tolist()
+                exo_unique.update(found_df.index.tolist())
+
+    total_comparisons = sum(len(v) for v in endo_cis_proximal.values())
+    logger.info(
+        f"[{cell_type}] Identified {len(endo_cis_proximal)} endo features with {total_comparisons} total pairs to test."
+    )
+
+    if total_comparisons == 0:
+        logger.info(f"[{cell_type}] No valid cis pairs found. Skipping.")
+        return []
+
+    # Load quants
+    logger.info(f"[{cell_type}] Loading quantifications...")
+    endo_quants = load_quants(
+        quants_dir, args.project, cell_type, args.endo_modality, args.debug
+    )
+    exog_quants = load_quants(
+        quants_dir, args.project, cell_type, args.exog_modality, args.debug
+    )
+
+    # Load covariates
+    logger.info(f"[{cell_type}] Loading covariates...")
+    endo_covars = load_final_covariates(
+        info_dir, args.project, cell_type, args.endo_modality, args.debug
+    )
+    exog_covars = load_final_covariates(
+        info_dir, args.project, cell_type, args.exog_modality, args.debug
+    )
+
+    # Merge covariates
+    common_bio_cols = [
+        "age",
+        "bmi",
+        "pmi",
+        "ph",
+        "sex",
+        "ancestry",
+        "smoker",
+        "pool",
+    ]
+    base_cols = [
+        c
+        for c in common_bio_cols
+        if c in endo_covars.columns and c in exog_covars.columns
+    ]
+
+    endo_spec = [c for c in endo_covars.columns if c not in base_cols]
+    exog_spec = [c for c in exog_covars.columns if c not in base_cols]
+
+    covars = endo_covars[base_cols].copy()
+    for c in endo_spec:
+        covars[f"{c}_endo"] = endo_covars[c]
+    for c in exog_spec:
+        covars[f"{c}_exog"] = exog_covars[c]
+
+    # Intersect indices
+    common_idx = covars.index.intersection(endo_quants.index).intersection(
+        exog_quants.index
+    )
+    logger.info(f"[{cell_type}] Number of common samples: {len(common_idx)}")
+    covars = covars.loc[common_idx]
+    endo_quants = endo_quants.loc[common_idx]
+    exog_quants = exog_quants.loc[common_idx]
+
+    data_df = covars.copy()
+
+    # Avoid merging entire quants if they are large; subset to what we need
+    endo_cols_to_keep = [
+        c for c in endo_cis_proximal.keys() if c in endo_quants.columns
+    ]
+    exog_cols_to_keep = [c for c in exo_unique if c in exog_quants.columns]
+
+    data_df = data_df.join(endo_quants[endo_cols_to_keep])
+    # Ignore overlap errors by explicitly picking columns not in data_df
+    exog_cols_clean = [c for c in exog_cols_to_keep if c not in data_df.columns]
+    data_df = data_df.join(exog_quants[exog_cols_clean])
+
+    # Determine covariates
+    if args.covariates == "none":
+        formula_covariates = []
+    elif args.covariates == "all":
+        formula_covariates = covars.columns.tolist()
+    elif args.covariates == "knowns":
+        formula_covariates = [x for x in covars.columns if not ("PCA_" in x)]
+    elif args.covariates == "unknowns":
+        formula_covariates = base_cols + [x for x in covars.columns if ("PCA_" in x)]
+    elif args.covariates == "specified":
+        if not args.covariates_list:
+            raise ValueError(
+                "--covariates-list must be provided when using --covariates specified"
+            )
+        formula_covariates = args.covariates_list
+
+    if args.regression_type in ["wls", "vwrlm"] and args.wls_weight_term:
+        if args.wls_weight_term in formula_covariates:
+            formula_covariates.remove(args.wls_weight_term)
+            logger.info(
+                f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' will be used in the regression"
+            )
+        if args.wls_weight_term not in data_df.columns:
+            raise ValueError(
+                f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' not found in covariates."
+            )
+
+    logger.info(f"[{cell_type}] Covariates included in formula: {formula_covariates}")
+
+    # Run regressions
+    logger.info(f"[{cell_type}] Starting {args.regression_type} regression...")
+    results = []
+
+    counter = 0
+    for endo_term, exos in endo_cis_proximal.items():
+        if endo_term not in data_df.columns:
+            continue
+        for exog_term in exos:
+            if exog_term not in data_df.columns:
+                continue
+
+            res = cis_regression(
+                data_df,
+                endo_term,
+                exog_term,
+                formula_covariates,
+                args.regression_type,
+                args.wls_weight_term,
+                args.debug,
+            )
+            res.append(cell_type)
+            results.append(res)
+
+            counter += 1
+            if counter % 1000 == 0:
+                print(
+                    f"[{cell_type}] Processed {counter}/{total_comparisons}...",
+                    end="\r",
+                )
+
+    print(f"\n[{cell_type}] Completed.")
+    return results
+
+
 def main():
     args = parse_args()
 
@@ -118,6 +311,7 @@ def main():
     )
     logger.info(f"Loading endo results from {endo_results_file}")
     endo_results = read_csv(endo_results_file)
+    endo_results = endo_results[endo_results["fdr_bh"] < args.fdr_threshold]
 
     # Load exog results
     exog_results_file = (
@@ -126,190 +320,40 @@ def main():
     )
     logger.info(f"Loading exog results from {exog_results_file}")
     exog_results = read_csv(exog_results_file)
+    exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
 
     cell_types = endo_results["tissue"].unique()
 
     all_results = []
 
-    for cell_type in cell_types:
-        logger.info(f"--- Processing cell type: {cell_type} ---")
+    logger.info(f"Starting parallel processing for {len(cell_types)} cell types...")
 
-        ct_endo_results = endo_results[endo_results["tissue"] == cell_type]
-        ct_exog_results = exog_results[exog_results["tissue"] == cell_type]
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = []
+        for cell_type in cell_types:
+            ct_endo_results = endo_results[endo_results["tissue"] == cell_type]
+            ct_exog_results = exog_results[exog_results["tissue"] == cell_type]
 
-        valid_endo = [f for f in ct_endo_results["feature"] if f in features_df.index]
-        valid_exog = [f for f in ct_exog_results["feature"] if f in features_df.index]
-
-        endo_features = features_df.loc[valid_endo].copy()
-        exo_features = features_df.loc[valid_exog].copy()
-
-        logger.info(
-            f"Found {len(endo_features)} significant endo features and {len(exo_features)} significant exog features."
-        )
-
-        # Find cis-proximal
-        logger.info("Finding cis-proximal pairs...")
-        endo_cis_proximal = {}
-        exo_unique = set()
-
-        # If the user has duplicates in gene index, handle gracefully (take first match)
-        if not endo_features.index.is_unique:
-            endo_features = endo_features[~endo_features.index.duplicated(keep="first")]
-        if not exo_features.index.is_unique:
-            exo_features = exo_features[~exo_features.index.duplicated(keep="first")]
-
-        for chrom in endo_features["chr"].unique():
-            chrom_endo = endo_features[endo_features["chr"] == chrom]
-            chrom_exo = exo_features[exo_features["chr"] == chrom]
-            if chrom_exo.empty:
-                continue
-            for endo_id, endo_row in chrom_endo.iterrows():
-                start_boundary = np.maximum(
-                    endo_row["start"] - args.max_dist, chrom_exo["start"].min()
+            futures.append(
+                executor.submit(
+                    process_cell_type,
+                    cell_type,
+                    ct_endo_results,
+                    ct_exog_results,
+                    features_df,
+                    args,
+                    quants_dir,
+                    info_dir,
                 )
-                end_boundary = np.minimum(
-                    endo_row["end"] + args.max_dist, chrom_exo["end"].max()
-                )
+            )
 
-                found_df = chrom_exo[
-                    (chrom_exo["start"] >= start_boundary)
-                    & (chrom_exo["end"] <= end_boundary)
-                ]
-                if not found_df.empty:
-                    endo_cis_proximal[endo_id] = found_df.index.tolist()
-                    exo_unique.update(found_df.index.tolist())
-
-        total_comparisons = sum(len(v) for v in endo_cis_proximal.values())
-        logger.info(
-            f"Identified {len(endo_cis_proximal)} endo features with {total_comparisons} total pairs to test."
-        )
-
-        if total_comparisons == 0:
-            logger.info("No valid cis pairs found for this cell type. Skipping.")
-            continue
-
-        # Load quants
-        logger.info("Loading quantifications...")
-        endo_quants = load_quants(
-            quants_dir, args.project, cell_type, args.endo_modality, args.debug
-        )
-        exog_quants = load_quants(
-            quants_dir, args.project, cell_type, args.exog_modality, args.debug
-        )
-
-        # Load covariates
-        logger.info("Loading covariates...")
-        endo_covars = load_final_covariates(
-            info_dir, args.project, cell_type, args.endo_modality, args.debug
-        )
-        exog_covars = load_final_covariates(
-            info_dir, args.project, cell_type, args.exog_modality, args.debug
-        )
-
-        # Merge covariates
-        common_bio_cols = [
-            "age",
-            "bmi",
-            "pmi",
-            "ph",
-            "sex",
-            "ancestry",
-            "smoker",
-            "pool",
-        ]
-        base_cols = [
-            c
-            for c in common_bio_cols
-            if c in endo_covars.columns and c in exog_covars.columns
-        ]
-
-        endo_spec = [c for c in endo_covars.columns if c not in base_cols]
-        exog_spec = [c for c in exog_covars.columns if c not in base_cols]
-
-        covars = endo_covars[base_cols].copy()
-        for c in endo_spec:
-            covars[f"{c}_endo"] = endo_covars[c]
-        for c in exog_spec:
-            covars[f"{c}_exog"] = exog_covars[c]
-
-        # Intersect indices
-        common_idx = covars.index.intersection(endo_quants.index).intersection(
-            exog_quants.index
-        )
-        logger.info(f"Number of common samples: {len(common_idx)}")
-        covars = covars.loc[common_idx]
-        endo_quants = endo_quants.loc[common_idx]
-        exog_quants = exog_quants.loc[common_idx]
-
-        data_df = covars.copy()
-
-        # Avoid merging entire quants if they are large; subset to what we need
-        endo_cols_to_keep = [
-            c for c in endo_cis_proximal.keys() if c in endo_quants.columns
-        ]
-        exog_cols_to_keep = [c for c in exo_unique if c in exog_quants.columns]
-
-        data_df = data_df.join(endo_quants[endo_cols_to_keep])
-        # Ignore overlap errors by explicitly picking columns not in data_df
-        exog_cols_clean = [c for c in exog_cols_to_keep if c not in data_df.columns]
-        data_df = data_df.join(exog_quants[exog_cols_clean])
-
-        # Determine covariates
-        if args.covariates == "none":
-            formula_covariates = []
-        elif args.covariates == "all":
-            formula_covariates = covars.columns.tolist()
-        elif args.covariates == "knowns":
-            formula_covariates = [x for x in covars.columns if not ("PCA_" in x)]
-        elif args.covariates == "unknowns":
-            formula_covariates = base_cols + [
-                x for x in covars.columns if ("PCA_" in x)
-            ]
-        elif args.covariates == "specified":
-            if not args.covariates_list:
-                raise ValueError(
-                    "--covariates-list must be provided when using --covariates specified"
-                )
-            formula_covariates = args.covariates_list
-
-        if args.regression_type in ["wls", "vwrlm"] and args.wls_weight_term:
-            if args.wls_weight_term in formula_covariates:
-                formula_covariates.remove(args.wls_weight_term)
-            if args.wls_weight_term not in data_df.columns:
-                raise ValueError(
-                    f"wls_weight_term '{args.wls_weight_term}' not found in covariates."
-                )
-
-        logger.info(f"Covariates included in formula: {formula_covariates}")
-
-        # Run regressions
-        logger.info(f"Starting {args.regression_type} regression...")
-
-        counter = 0
-        for endo_term, exos in endo_cis_proximal.items():
-            if endo_term not in data_df.columns:
-                continue
-            for exog_term in exos:
-                if exog_term not in data_df.columns:
-                    continue
-
-                res = cis_regression(
-                    data_df,
-                    endo_term,
-                    exog_term,
-                    formula_covariates,
-                    args.regression_type,
-                    args.wls_weight_term,
-                    args.debug,
-                )
-                res.append(cell_type)
-                all_results.append(res)
-
-                counter += 1
-                if counter % 1000 == 0:
-                    print(f"Processed {counter}/{total_comparisons}...", end="\r")
-
-        print(f"\nCompleted {cell_type}.")
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                ct_results = future.result()
+                if ct_results:
+                    all_results.extend(ct_results)
+            except Exception as e:
+                logger.error(f"Exception during parallel processing: {e}")
 
     print("\nAll processing complete.")
 
@@ -334,7 +378,9 @@ def main():
     results_df["bh_fdr"] = compute_fdr(results_df["p-value"].fillna(1))
 
     total_sig = results_df.loc[results_df["bh_fdr"] <= 0.05].shape[0]
-    logger.info(f"Found {total_sig} significant cis pairs across all cell types (FDR <= 0.05)")
+    logger.info(
+        f"Found {total_sig} significant cis pairs across all cell types (FDR <= 0.05)"
+    )
 
     out_file = (
         results_dir
