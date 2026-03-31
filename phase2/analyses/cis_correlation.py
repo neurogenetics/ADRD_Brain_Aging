@@ -414,52 +414,63 @@ def main():
         pct_endo = (corr_endo / ct_endo * 100) if ct_endo > 0 else 0
         pct_exog = (corr_exog / ct_exog * 100) if ct_exog > 0 else 0
 
-        summary_rows.append({
-            "Cell Type": cell_type,
-            f"Sig {args.endo_modality.upper()}": ct_endo,
-            f"Corr {args.endo_modality.upper()}": corr_endo,
-            f"% {args.endo_modality.upper()} Corr": f"{pct_endo:.1f}%",
-            f"Sig {args.exog_modality.upper()}": ct_exog,
-            f"Corr {args.exog_modality.upper()}": corr_exog,
-            f"% {args.exog_modality.upper()} Corr": f"{pct_exog:.1f}%",
-            "Sig Pairs": pairs,
-        })
-        
-        plot_rows.append({
-            "Cell Type": cell_type,
-            "Percent Correlated": pct_endo,
-            "Modality": args.endo_modality.upper()
-        })
-        plot_rows.append({
-            "Cell Type": cell_type,
-            "Percent Correlated": pct_exog,
-            "Modality": args.exog_modality.upper()
-        })
+        summary_rows.append(
+            {
+                "Cell Type": cell_type,
+                f"Sig {args.endo_modality.upper()}": ct_endo,
+                f"Corr {args.endo_modality.upper()}": corr_endo,
+                f"% {args.endo_modality.upper()} Corr": f"{pct_endo:.1f}%",
+                f"Sig {args.exog_modality.upper()}": ct_exog,
+                f"Corr {args.exog_modality.upper()}": corr_exog,
+                f"% {args.exog_modality.upper()} Corr": f"{pct_exog:.1f}%",
+                "Sig Pairs": pairs,
+            }
+        )
+
+        plot_rows.append(
+            {
+                "Cell Type": cell_type,
+                "Percent Correlated": pct_endo,
+                "Modality": args.endo_modality.upper(),
+            }
+        )
+        plot_rows.append(
+            {
+                "Cell Type": cell_type,
+                "Percent Correlated": pct_exog,
+                "Modality": args.exog_modality.upper(),
+            }
+        )
 
     summary_df = PandasDF(summary_rows)
-    logger.info(f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}")
+    logger.info(
+        f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}"
+    )
 
     # Visualize summary
     plot_df = PandasDF(plot_rows)
     figs_dir = work_dir / "figures"
     figs_dir.mkdir(parents=True, exist_ok=True)
-    
-    fig_file = figs_dir / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary.png"
-    
+
+    fig_file = (
+        figs_dir
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary.png"
+    )
+
     sns.set_theme(style="whitegrid")
-    g = sns.catplot(
+    plt.figure(figsize=(10, 6))
+
+    ax = sns.barplot(
         data=plot_df,
-        kind="bar",
         x="Percent Correlated",
         y="Cell Type",
-        col="Modality",
-        height=5,
-        aspect=1.2,
-        palette="viridis",
-        sharex=True,
+        hue="Modality",
+        palette="colorblind",
     )
-    g.set_axis_labels("Percent Correlated (%)", "")
-    g.set_titles("{col_name}")
+    ax.set_xlabel("Percent cis Correlated (%)")
+    ax.set_ylabel("")
+    plt.legend(title="Modality", loc="lower right")
+
     plt.tight_layout()
     plt.savefig(fig_file, dpi=300)
     plt.close()
