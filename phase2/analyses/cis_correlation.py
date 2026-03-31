@@ -397,6 +397,34 @@ def main():
     sig_results_df.to_csv(sig_out_file, index=False)
     logger.info(f"Saved significant results to {sig_out_file}")
 
+    # Generate and log summary table
+    summary_rows = []
+    for cell_type in sorted(cell_types):
+        ct_endo = endo_results[endo_results["tissue"] == cell_type]["feature"].nunique()
+        ct_exog = exog_results[exog_results["tissue"] == cell_type]["feature"].nunique()
+
+        ct_sig = sig_results_df[sig_results_df["tissue"] == cell_type]
+        corr_endo = ct_sig["endo_feature"].nunique()
+        corr_exog = ct_sig["exog_feature"].nunique()
+        pairs = len(ct_sig)
+
+        pct_endo = (corr_endo / ct_endo * 100) if ct_endo > 0 else 0
+        pct_exog = (corr_exog / ct_exog * 100) if ct_exog > 0 else 0
+
+        summary_rows.append({
+            "Cell Type": cell_type,
+            "Sig Endo": ct_endo,
+            "Corr Endo": corr_endo,
+            "% Endo Corr": f"{pct_endo:.1f}%",
+            "Sig Exog": ct_exog,
+            "Corr Exog": corr_exog,
+            "% Exog Corr": f"{pct_exog:.1f}%",
+            "Sig Pairs": pairs,
+        })
+
+    summary_df = PandasDF(summary_rows)
+    logger.info(f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}")
+
 
 if __name__ == "__main__":
     main()
