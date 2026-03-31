@@ -28,35 +28,49 @@ def parse_args():
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
     parser.add_argument("--endo-modality", type=str, default="rna")
     parser.add_argument("--exog-modality", type=str, default="atac")
+    
     parser.add_argument(
-        "--covariates",
+        "--endo-covariates",
         type=str,
         default="all",
         choices=["none", "all", "knowns", "unknowns", "specified"],
     )
-    parser.add_argument("--covariates-list", type=str, nargs="+")
-    parser.add_argument("--wls-weight-term", type=str, default="cell_counts_endo")
+    parser.add_argument("--endo-covariates-list", type=str, nargs="+")
+    parser.add_argument("--endo-weight-term", type=str, default="cell_counts_endo")
+
+    parser.add_argument(
+        "--exog-covariates",
+        type=str,
+        default="all",
+        choices=["none", "all", "knowns", "unknowns", "specified"],
+    )
+    parser.add_argument("--exog-covariates-list", type=str, nargs="+")
+    parser.add_argument("--exog-weight-term", type=str, default="cell_counts_exog")
+
     parser.add_argument("--n-rep", type=int, default=1000, help="Number of bootstrap replications for mediation.")
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
 
 def run_single_mediation(
-    df, endo_feature, exog_feature, exposure, covariates, weight_term, n_rep
+    df, endo_feature, exog_feature, exposure, endo_covariates, exog_covariates, endo_weight_term, exog_weight_term, n_rep
 ):
     try:
         # Construct formulas
-        if covariates:
-            covars_str = " + ".join(covariates)
-            mediator_formula = f'Q("{exog_feature}") ~ {exposure} + {covars_str}'
-            outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}") + {covars_str}'
-        else:
-            mediator_formula = f'Q("{exog_feature}") ~ {exposure}'
-            outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}")'
+        exog_covars_str = " + ".join(exog_covariates) if exog_covariates else ""
+        mediator_formula = f'Q("{exog_feature}") ~ {exposure}'
+        if exog_covars_str:
+            mediator_formula += f" + {exog_covars_str}"
+
+        outcome_covars_list = list(dict.fromkeys(endo_covariates + exog_covariates))
+        outcome_covars_str = " + ".join(outcome_covars_list) if outcome_covars_list else ""
+        outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}")'
+        if outcome_covars_str:
+            outcome_formula += f" + {outcome_covars_str}"
 
         # Fit models
-        mediator_model = smf.wls(mediator_formula, data=df, weights=df[weight_term])
-        outcome_model = smf.wls(outcome_formula, data=df, weights=df[weight_term])
+        mediator_model = smf.wls(mediator_formula, data=df, weights=df[exog_weight_term])
+        outcome_model = smf.wls(outcome_formula, data=df, weights=df[endo_weight_term])
 
         # Mediation analysis
         med = Mediation(
@@ -174,35 +188,61 @@ def process_cell_type(
     data_df = data_df.join(exog_quants[exog_cols_clean])
 
     # Determine covariates
-    if args.covariates == "none":
-        formula_covariates = []
-    elif args.covariates == "all":
-        formula_covariates = [c for c in covars.columns if c != "age"]
-    elif args.covariates == "knowns":
-        formula_covariates = [x for x in covars.columns if not ("PCA_" in x) and x != "age"]
-    elif args.covariates == "unknowns":
-        formula_covariates = [x for x in covars.columns if ("PCA_" in x)]
-    elif args.covariates == "specified":
-        if not args.covariates_list:
-            raise ValueError(
-                "--covariates-list must be provided when using --covariates specified"
-            )
-        formula_covariates = [c for c in args.covariates_list if c != "age"]
+    def resolve_covariates(arg_covar, arg_covar_list, original_cols, spec_cols, suffix):
+        if arg_covar == "none":
+            raw_covars = []
+        elif arg_covar == "all":
+            raw_covars = [c for c in original_cols if c != "age"]
+        elif arg_covar == "knowns":
+            raw_covars = [c for c in original_cols if not ("PCA_" in c) and c != "age"]
+        elif arg_covar == "unknowns":
+            raw_covars = [c for c in original_cols if ("PCA_" in c)]
+        elif arg_covar == "specified":
+            raw_covars = [c for c in arg_covar_list if c != "age"]
+        else:
+            raw_covars = []
+        
+        resolved = []
+        for c in raw_covars:
+            if c in base_cols:
+                resolved.append(c)
+            elif c in spec_cols:
+                resolved.append(f"{c}_{suffix}")
+            else:
+                resolved.append(c)
+        return list(dict.fromkeys(resolved))
 
-    if args.wls_weight_term:
-        if args.wls_weight_term in formula_covariates:
-            formula_covariates.remove(args.wls_weight_term)
-        if args.wls_weight_term not in data_df.columns:
-            raise ValueError(
-                f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' not found in covariates."
-            )
-        logger.info(
-            f"[{cell_type}] wls_weight_term '{args.wls_weight_term}' will be used in the regression"
+    endo_formula_covariates = resolve_covariates(
+        args.endo_covariates, args.endo_covariates_list, endo_covars.columns, endo_spec, "endo"
+    )
+    exog_formula_covariates = resolve_covariates(
+        args.exog_covariates, args.exog_covariates_list, exog_covars.columns, exog_spec, "exog"
+    )
+
+    endo_weight_term = args.endo_weight_term
+    exog_weight_term = args.exog_weight_term
+
+    if endo_weight_term in endo_formula_covariates:
+        endo_formula_covariates.remove(endo_weight_term)
+    if endo_weight_term in exog_formula_covariates:
+        exog_formula_covariates.remove(endo_weight_term)
+
+    if exog_weight_term in exog_formula_covariates:
+        exog_formula_covariates.remove(exog_weight_term)
+    if exog_weight_term in endo_formula_covariates:
+        endo_formula_covariates.remove(exog_weight_term)
+
+    if endo_weight_term not in data_df.columns:
+        raise ValueError(
+            f"[{cell_type}] endo_weight_term '{endo_weight_term}' not found in covariates."
         )
-    else:
-        raise ValueError("A WLS weight term must be provided.")
-
-    logger.info(f"[{cell_type}] Covariates included in formula: {formula_covariates}")
+    if exog_weight_term not in data_df.columns:
+        raise ValueError(
+            f"[{cell_type}] exog_weight_term '{exog_weight_term}' not found in covariates."
+        )
+        
+    logger.info(f"[{cell_type}] Endo covariates: {endo_formula_covariates} | Weight: {endo_weight_term}")
+    logger.info(f"[{cell_type}] Exog covariates: {exog_formula_covariates} | Weight: {exog_weight_term}")
 
     logger.info(f"[{cell_type}] Starting mediation analysis on {len(ct_sig_results)} pairs...")
     results = []
@@ -222,8 +262,10 @@ def process_cell_type(
             endo_term,
             exog_term,
             exposure="age",
-            covariates=formula_covariates,
-            weight_term=args.wls_weight_term,
+            endo_covariates=endo_formula_covariates,
+            exog_covariates=exog_formula_covariates,
+            endo_weight_term=endo_weight_term,
+            exog_weight_term=exog_weight_term,
             n_rep=args.n_rep
         )
         res["tissue"] = cell_type
