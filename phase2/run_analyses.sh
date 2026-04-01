@@ -47,3 +47,6 @@ uv run phase2/analyses/cis_correlation.py --covariates specified --covariates-li
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a mediation analysis of these pairs
 nohup uv run phase2/analyses/run_mediation.py --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates specified --exog-covariates-list PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog --debug &
+
+# generate latent features per-celltype using cNMF
+uv run phase2/analyses/run_cnmf.py --modality rna --covariates sample_id sex gex_pool --components 4 5 6 7 8 9 10 11 12 13 14 15 16
