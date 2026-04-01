@@ -24,6 +24,13 @@ def parse_args():
     parser.add_argument("--components", type=int, nargs="+", default=[10, 15, 20, 25, 30])
     parser.add_argument("--n-iter", type=int, default=100)
     parser.add_argument("--num-highvar-genes", type=int, default=2000)
+    parser.add_argument(
+        "--covariates", 
+        type=str, 
+        nargs="+", 
+        default=None, 
+        help="List of technical covariates in obs to regress out using cNMF Preprocess (Harmony)."
+    )
     parser.add_argument("--workers", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
@@ -37,15 +44,41 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
     # cNMF expects dense count arrays or efficiently structured sparse arrays without all zero columns
     sc.pp.filter_genes(adata_ct, min_cells=1)
 
-    # Save subset counts to a temporary h5ad file for cNMF
     safe_ct = cell_type.replace(' ', '_').replace('/', '-')
-    counts_fn = tmp_dir / f"{args.project}.{safe_ct}.{args.modality}.counts.h5ad"
-    adata_ct.write_h5ad(counts_fn)
-    
-    logger.info(f"[{cell_type}] Saved raw counts to {counts_fn} ({adata_ct.shape[0]} cells, {adata_ct.shape[1]} features)")
+    run_name = f"{args.project}_{safe_ct}_{args.modality}"
+    out_base = str(tmp_dir / run_name)
+
+    genes_file = None
+    tpm_fn = None
+
+    if args.covariates:
+        # Use cNMF Preprocess module to integrate known technical covariates via Harmony
+        from cnmf.preprocess import Preprocess
+        
+        logger.info(f"[{cell_type}] Running cNMF Preprocess with covariates: {args.covariates}")
+        pp = Preprocess()
+        try:
+            pp.preprocess_for_cnmf(
+                adata_ct, 
+                harmony_vars=args.covariates,
+                n_top_rna_genes=args.num_highvar_genes,
+                save_output_base=out_base
+            )
+            # The Preprocess module automatically saves these files
+            counts_fn = f"{out_base}.Corrected.HVG.Varnorm.h5ad"
+            genes_file = f"{out_base}.Corrected.HVGs.txt"
+            tpm_fn = f"{out_base}.TP10K.h5ad"
+            logger.info(f"[{cell_type}] Preprocess completed. Normalized counts saved to {counts_fn}")
+        except Exception as e:
+            logger.error(f"[{cell_type}] cNMF Preprocess failed (potentially due to package compatibility): {e}")
+            return
+    else:
+        # Standard approach without preprocessing covariates
+        counts_fn = f"{out_base}.counts.h5ad"
+        adata_ct.write_h5ad(counts_fn)
+        logger.info(f"[{cell_type}] Saved raw counts to {counts_fn} ({adata_ct.shape[0]} cells, {adata_ct.shape[1]} features)")
 
     # Initialize cNMF
-    run_name = f"{args.project}_{safe_ct}_{args.modality}"
     cnmf_obj = cNMF(output_dir=str(cnmf_dir), name=run_name)
 
     # Prepare
@@ -55,7 +88,9 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
             counts_fn=str(counts_fn), 
             components=args.components, 
             n_iter=args.n_iter,
-            num_highvar_genes=args.num_highvar_genes
+            num_highvar_genes=args.num_highvar_genes,
+            genes_file=genes_file,
+            tpm_fn=tpm_fn
         )
     except Exception as e:
         logger.error(f"[{cell_type}] cNMF prepare failed: {e}")
