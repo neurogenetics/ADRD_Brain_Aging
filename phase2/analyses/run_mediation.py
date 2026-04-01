@@ -56,21 +56,33 @@ def run_single_mediation(
     df, endo_feature, exog_feature, exposure, endo_covariates, exog_covariates, endo_weight_term, exog_weight_term, n_rep
 ):
     try:
+        # Isolate exactly the columns we need
+        outcome_covars_list = list(dict.fromkeys(endo_covariates + exog_covariates))
+        all_required_cols = list(dict.fromkeys(
+            [endo_feature, exog_feature, exposure, endo_weight_term, exog_weight_term] + outcome_covars_list
+        ))
+        
+        # Subset dataframe and drop any missing values across required columns to ensure identically matched samples
+        model_df = df[all_required_cols].dropna()
+
+        if len(model_df) < 10:
+            logger.debug(f"Mediation failed for {endo_feature} - {exog_feature}: Too few samples ({len(model_df)}) after dropping NaNs.")
+            raise ValueError("Too few samples")
+
         # Construct formulas
         exog_covars_str = " + ".join(exog_covariates) if exog_covariates else ""
         mediator_formula = f'Q("{exog_feature}") ~ {exposure}'
         if exog_covars_str:
             mediator_formula += f" + {exog_covars_str}"
 
-        outcome_covars_list = list(dict.fromkeys(endo_covariates + exog_covariates))
         outcome_covars_str = " + ".join(outcome_covars_list) if outcome_covars_list else ""
         outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}")'
         if outcome_covars_str:
             outcome_formula += f" + {outcome_covars_str}"
 
         # Fit models
-        mediator_model = smf.wls(mediator_formula, data=df, weights=df[exog_weight_term])
-        outcome_model = smf.wls(outcome_formula, data=df, weights=df[endo_weight_term])
+        mediator_model = smf.wls(mediator_formula, data=model_df, weights=model_df[exog_weight_term])
+        outcome_model = smf.wls(outcome_formula, data=model_df, weights=model_df[endo_weight_term])
 
         # Mediation analysis
         med = Mediation(
