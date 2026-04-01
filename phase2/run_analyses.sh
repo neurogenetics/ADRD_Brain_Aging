@@ -44,3 +44,6 @@ done
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene
 uv run phase2/analyses/cis_correlation.py --covariates specified --covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog
+
+# for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a mediation analysis of these pairs
+uv run phase2/analyses/run_mediation.py --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates specified --exog-covariates-list PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog --debug
