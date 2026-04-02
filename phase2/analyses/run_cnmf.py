@@ -38,7 +38,7 @@ def parse_args():
         default=None,
         help="List of technical covariates in obs to regress out using cNMF Preprocess (Harmony).",
     )
-    parser.add_argument("--workers", type=int, default=multiprocessing.cpu_count())
+    parser.add_argument("--workers", type=int, default=int(multiprocessing.cpu_count() / 2))
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -66,18 +66,20 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
         import numpy as np
 
         # --- Monkeypatch cNMF's buggy moe_correct_ridge ---
-        def patched_moe_correct_ridge(Z_orig, Z_cos, Z_corr, R, W, K, Phi_Rk, Phi_moe, lamb):
+        def patched_moe_correct_ridge(
+            Z_orig, Z_cos, Z_corr, R, W, K, Phi_Rk, Phi_moe, lamb
+        ):
             Z_corr = Z_orig.copy()
-            if Phi_moe.shape[0] == Z_orig.shape[1]:  
+            if Phi_moe.shape[0] == Z_orig.shape[1]:
                 Phi_moe = Phi_moe.T
-            if R.shape[0] == Z_orig.shape[1]:        
+            if R.shape[0] == Z_orig.shape[1]:
                 R = R.T
             lamb_mat = np.diag(lamb) if len(np.shape(lamb)) == 1 else lamb
             for i in range(K):
-                Phi_Rk = np.multiply(Phi_moe, R[i,:])
+                Phi_Rk = np.multiply(Phi_moe, R[i, :])
                 x = np.dot(Phi_Rk, Phi_moe.T) + lamb_mat
                 W = np.dot(np.dot(np.linalg.inv(x), Phi_Rk), Z_orig.T)
-                W[0,:] = 0 
+                W[0, :] = 0
                 Z_corr -= np.dot(W.T, Phi_Rk)
             Z_cos = Z_corr / np.linalg.norm(Z_corr, ord=2, axis=0)
             return Z_cos, Z_corr, W, Phi_Rk
@@ -85,26 +87,47 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
         cnmf.preprocess.moe_correct_ridge = patched_moe_correct_ridge
 
         # --- Monkeypatch harmony_correct_X to handle transposed outputs & negative strides ---
-        def patched_harmony_correct_X(self, X, obs, pca, harmony_vars, theta=1, max_iter_harmony=20):
+        def patched_harmony_correct_X(
+            self, X, obs, pca, harmony_vars, theta=1, max_iter_harmony=20
+        ):
             import harmonypy
-            harmony_res = harmonypy.run_harmony(pca.copy(), obs, harmony_vars, max_iter_harmony=max_iter_harmony, theta=theta)
+
+            harmony_res = harmonypy.run_harmony(
+                pca.copy(),
+                obs,
+                harmony_vars,
+                max_iter_harmony=max_iter_harmony,
+                theta=theta,
+            )
 
             X_pca_harmony = harmony_res.Z_corr
             if X_pca_harmony.shape[1] == pca.shape[0]:
-                X_pca_harmony = X_pca_harmony.T.copy() # .copy() avoids negative stride issues
+                X_pca_harmony = (
+                    X_pca_harmony.T.copy()
+                )  # .copy() avoids negative stride issues
 
             _, X_corr, _, _ = cnmf.preprocess.moe_correct_ridge(
-                X.T.copy(), None, None, harmony_res.R.copy(), None, harmony_res.K, None, harmony_res.Phi_moe.copy(), harmony_res.lamb
+                X.T.copy(),
+                None,
+                None,
+                harmony_res.R.copy(),
+                None,
+                harmony_res.K,
+                None,
+                harmony_res.Phi_moe.copy(),
+                harmony_res.lamb,
             )
 
             X_corr = np.array(X_corr.T).copy()
-            X_corr[X_corr<0] = 0
+            X_corr[X_corr < 0] = 0
             return (X_corr, X_pca_harmony)
 
         Preprocess.harmony_correct_X = patched_harmony_correct_X
         # ----------------------------------------------------
 
-        logger.info(f"[{cell_type}] Running cNMF Preprocess with covariates: {args.covariates}")
+        logger.info(
+            f"[{cell_type}] Running cNMF Preprocess with covariates: {args.covariates}"
+        )
         pp = Preprocess()
         try:
             pp.preprocess_for_cnmf(
@@ -251,4 +274,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
