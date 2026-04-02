@@ -128,7 +128,7 @@ def main():
     metadata = metadata.dropna(subset=["age", "sample_id"])
 
     # Merge metadata with usage by cell IDs
-    df = pd.merge(usage, metadata, left_index=True, right_index=True, how="inner")
+    df = pd.merge(usage, metadata, left_index=True, right_index=True, how="left")
 
     if len(df) == 0:
         logger.error(
@@ -154,10 +154,12 @@ def main():
         formula_df.rename(columns={factor: "latent_factor"}, inplace=True)
 
         try:
+            # Ensure sample_id is explicitly a string and no missing values cause length mismatch
+            formula_df['sample_id'] = formula_df['sample_id'].astype(str)
+            formula_df = formula_df.dropna()
+
             # Fit the model
-            md = smf.mixedlm(
-                "latent_factor ~ age", formula_df, groups=formula_df["sample_id"]
-            )
+            md = smf.mixedlm("latent_factor ~ age", formula_df, groups="sample_id")
             mdf = md.fit()
 
             # Extract statistics for 'age'
