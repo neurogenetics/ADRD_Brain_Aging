@@ -52,13 +52,45 @@ tmux attach-session -t brainage
 
 # generate latent features per-celltype using cNMF
 tmux new -s brainage
-uv run phase2/analyses/cnmf_latent_generation.py --modality rna --covariates sample_id sex gex_pool --components 4 5 6 7 8 9 10 11 12 13 14 15 16 --workers 4
+uv run phase2/analyses/cnmf_latent_generation.py --modality rna --covariates sample_id sex gex_pool --components 4 5 6 7 8 9 10 11 12 13 14 15 16
 tmux attach-session -t brainage
 
 # review cNMF stability figures and run latent based analysis using the determined K
-# Oligos, K=7
+# Astrocytes, K=11
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Astrocytes --k 11
+# Endothelial, K=14
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Endothelial --k 14
+# ExN_BCL11B, K=7
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN BCL11B" --k 7
+# ExN_CUX2, K=6
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN CUX2" --k 6
+# ExN_LAMP5, K=8
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN LAMP5" --k 8
+# ExN_RELN, K=5
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RELN" --k 5
+# ExN_RMST, K=10
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RMST" --k 10
+# ExN_RORB, K=8
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RORB" --k 8
+# ExN_SEMA3E, K=6
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN SEMA3E" --k 6
+# ExN_THEMIS, K=6
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN THEMIS" --k 6
+# InN_LAMP5, K=10
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN LAMP5" --k 10
+# InN_PAX6, K=7
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN PAX6" --k 7
+# InN_PVALB, K=6
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN PVALB" --k 6
+# InN_SST, K=8
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN SST" --k 8
+# InN_VIP, K=10
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN VIP" --k 10
+# Microglia, K=12
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Microglia --k 12
+# Microglia, K=12
+uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Microglia --k 12
+# Oligodendrocytes, K=7
 uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Oligodendrocytes --k 7
-# ExN RORB, K=8
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type ExN_RORB --k 8
 # OPCs, K=10
 uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type OPCs --k 10
