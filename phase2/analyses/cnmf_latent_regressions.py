@@ -155,7 +155,7 @@ def main():
 
         try:
             # Ensure sample_id is explicitly a string and no missing values cause length mismatch
-            formula_df['sample_id'] = formula_df['sample_id'].astype(str)
+            formula_df["sample_id"] = formula_df["sample_id"].astype(str)
             formula_df = formula_df.dropna()
 
             # Fit the model
@@ -197,9 +197,9 @@ def main():
     results_df = pd.DataFrame(lmm_results)
 
     # Save results
-    out_dir = results_dir / "lmm_results"
+    out_dir = cnmf_dir / "lmm_results"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_k{args.k}_lmm.csv"
+    out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_lmm.csv"
     results_df.to_csv(out_file, index=False)
 
     logger.info(
