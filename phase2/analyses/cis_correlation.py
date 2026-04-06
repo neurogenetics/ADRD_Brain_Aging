@@ -4,11 +4,9 @@ import logging
 from pathlib import Path
 import sys
 
-import matplotlib.pyplot as plt
 import numpy as np
 from pandas import DataFrame as PandasDF
 from pandas import read_csv
-import seaborn as sns
 
 # Import functions from pseudobulk_regression
 from pseudobulk_regression import (
@@ -403,7 +401,6 @@ def main():
 
     # Generate and log summary table
     summary_rows = []
-    plot_rows = []
     for cell_type in sorted(cell_types):
         ct_endo = endo_results[endo_results["tissue"] == cell_type]["feature"].nunique()
         ct_exog = exog_results[exog_results["tissue"] == cell_type]["feature"].nunique()
@@ -422,25 +419,10 @@ def main():
                 f"Sig {args.endo_modality.upper()}": ct_endo,
                 f"Corr {args.endo_modality.upper()}": corr_endo,
                 f"% {args.endo_modality.upper()} Corr": f"{pct_endo:.1f}%",
-                f"Sig {args.exog_modality.upper()}": ct_exog,
+                f"{args.exog_modality.upper()}": ct_exog,
                 f"Corr {args.exog_modality.upper()}": corr_exog,
                 f"% {args.exog_modality.upper()} Corr": f"{pct_exog:.1f}%",
                 "Sig Pairs": pairs,
-            }
-        )
-
-        plot_rows.append(
-            {
-                "Cell Type": cell_type,
-                "Percent Correlated": pct_endo,
-                "Modality": args.endo_modality.upper(),
-            }
-        )
-        plot_rows.append(
-            {
-                "Cell Type": cell_type,
-                "Percent Correlated": pct_exog,
-                "Modality": args.exog_modality.upper(),
             }
         )
 
@@ -448,35 +430,6 @@ def main():
     logger.info(
         f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}"
     )
-
-    # Visualize summary
-    plot_df = PandasDF(plot_rows)
-    figs_dir = work_dir / "figures"
-    figs_dir.mkdir(parents=True, exist_ok=True)
-
-    fig_file = (
-        figs_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary.png"
-    )
-
-    sns.set_theme(style="whitegrid")
-    plt.figure(figsize=(10, 6))
-
-    ax = sns.barplot(
-        data=plot_df,
-        x="Percent Correlated",
-        y="Cell Type",
-        hue="Modality",
-        palette="colorblind",
-    )
-    ax.set_xlabel("Percent cis Correlated (%)")
-    ax.set_ylabel("")
-    plt.legend(title="Modality", loc="lower right")
-
-    plt.tight_layout()
-    plt.savefig(fig_file, dpi=300)
-    plt.close()
-    logger.info(f"Saved visualization to {fig_file}")
 
 
 if __name__ == "__main__":
