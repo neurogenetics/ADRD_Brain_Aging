@@ -317,12 +317,14 @@ def main():
 
     # Load exog results
     exog_results_file = (
+        # results_dir
+        # / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}d.age.csv"
         results_dir
-        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
+        / f"{args.project}.all_celltypes.{args.exog_modality}.{args.regression_type}.age.csv"
     )
     logger.info(f"Loading exog results from {exog_results_file}")
     exog_results = read_csv(exog_results_file)
-    exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
+    # exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
 
     cell_types = endo_results["tissue"].unique()
 
