@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import statsmodels.stats.multitest as smm
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,11 @@ def parse_args():
     return parser.parse_args()
 
 
+def compute_fdr(pvalues):
+    bh_adj = smm.fdrcorrection(pvalues)
+    return bh_adj[1]
+
+
 def main():
     args = parse_args()
 
@@ -53,14 +59,14 @@ def main():
     )
     exog_results_file = (
         results_dir
-        / f"{args.project}.all_celltypes.{args.exog_modality}.{args.regression_type}.age.csv"
+        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
     )
-    cis_sig_file = (
+    cis_results_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.fdr_filtered.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.csv"
     )
 
-    for f in [endo_results_file, exog_results_file, cis_sig_file]:
+    for f in [endo_results_file, exog_results_file, cis_results_file]:
         if not f.exists():
             logger.error(f"Required file not found: {f}")
             return
@@ -72,13 +78,22 @@ def main():
     logger.info(f"Loading exog results from {exog_results_file}")
     exog_results = pd.read_csv(exog_results_file)
     # the exog file is not fdr filtered directly in the cis_correlation.py script usually
-    # exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
+    exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
 
-    logger.info(f"Loading significant cis results from {cis_sig_file}")
-    sig_results_df = pd.read_csv(cis_sig_file)
+    logger.info(f"Loading cis results from {cis_results_file}")
+    results_df = pd.read_csv(cis_results_file)
+    # restrict results to just age associated features
+    results_df = results_df[
+        (results_df["endo_feature"].isin(endo_results["feature"]))
+        & (results_df["exog_feature"].isin(exog_results["feature"]))
+    ]
+
+    # recompute the B&H FDR for just the age associated results
+    results_df["bh_fdr"] = compute_fdr(results_df["p-value"].fillna(1))
+    sig_results_df = results_df[results_df["bh_fdr"] < args.fdr_threshold]
 
     cell_types = endo_results["tissue"].unique()
-    
+
     plot_rows = []
     endo_upper = args.endo_modality.upper()
     exog_upper = args.exog_modality.upper()
@@ -130,7 +145,9 @@ def main():
     )
     ax.set_xlabel("Percent cis Correlated (%)")
     ax.set_ylabel("")
-    plt.legend(title="Modality", loc="lower right")
+    plt.legend(
+        title="Modality", bbox_to_anchor=(1.02, 0.5), loc="center left", borderaxespad=0
+    )
 
     plt.tight_layout()
     plt.savefig(fig_file, dpi=300)
