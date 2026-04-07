@@ -31,10 +31,26 @@
     - Regression analysis between quantified features (expression and accessibility) and age; pseudobulk_regression_analysis.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
     - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between feature quantification and age; post_pseudobulk_regression.ipynb
     - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
-2. Identify chromatin accessibility features correlated with cis proximal age associated gene expression features
-    - Regression analysis between quantified age associated gene expression features and cis proximal chromatin accessibility features; cis_correlation.ipynb. Where the possible regression methods include GLM, GLM with Tweedie distribution, and RLM.
-    - Post-proceesing of the regression analysis across cell-types to apply B&H FDR and identify the statistally significant linear correlations between age associated gene expression features and cis proximal chromatin accessibility features; post_cis_correlation.ipynb
-    - Filter outlier effects from age regression from the GLM Tweedie results based on the RLM results; filter_regression_type_differences.ipynb
+1. Identification of Cis-Correlated Features (cis_correlation.py)
+   * Objective: To identify significant correlations between endogenous modalities (e.g., RNA expression) and proximal exogenous modalities (e.g.,
+     ATAC-seq peaks) within a defined genomic window.
+   * Data Preparation:
+       * Feature Filtration: Feature Filtration: The analysis begins by loading significant endogenous features that have been previously identified as being associated with age (FDR < 0.05) and all detected exogenous features.
+       * Proximity Mapping: For each cell type, endogenous features (e.g., genes) are mapped to proximal exogenous features (e.g., peaks) that reside
+         within a specified maximum genomic distance (default: 1 Mb). This establishes the candidate cis-regulatory pairs to be tested.
+       * Covariate Integration: Biological and technical covariates (e.g., age, BMI, PMI, pH, sex, ancestry, smoking status, and sequencing pool) are
+         harmonized across both modalities. Cell-type-specific sample counts are incorporated.
+   * Statistical Modeling:
+       * Regression Framework: For each identified cis-proximal pair within each cell type, a regression model (e.g., Weighted Least Squares, WLS) is
+         applied to evaluate the relationship between the endogenous and exogenous quantifications.
+       * Model Formula: The regression model controls for the unified set of covariates. The formula takes the form: Endogenous_Feature ~
+         Exogenous_Feature + Covariates.
+       * Parallelization: Regressions are executed in parallel across cell types to optimize computational efficiency.
+   * Significance Thresholding:
+       * FDR Calculation: The resulting p-values for the exogenous terms across all tested pairs are adjusted for multiple comparisons using the
+         Benjamini-Hochberg (BH) procedure.
+       * Output Generation: The pipeline outputs both the complete unfiltered regression results and a subset filtered at a predefined false discovery
+         rate (e.g., FDR ≤ 0.05).
 3. Conditioned age regression analysis. Rerun age regression analysis for the age associated GEX features conditioned on <i>cis</i> proximal correlated ATAC features that are also age associated. cis_conditioned_regression_analysis.ipynb.
     - Summarize the conditioned age regression differences between cell-types. post_cis_conditioned_regression.ipynb
 
