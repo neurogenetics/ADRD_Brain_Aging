@@ -95,6 +95,7 @@ def main():
     cell_types = endo_results["tissue"].unique()
 
     plot_rows = []
+    summary_rows = []
     endo_upper = args.endo_modality.upper()
     exog_upper = args.exog_modality.upper()
 
@@ -103,6 +104,7 @@ def main():
         ct_exog = exog_results[exog_results["tissue"] == cell_type]["feature"].nunique()
 
         ct_sig = sig_results_df[sig_results_df["tissue"] == cell_type]
+        pairs = len(ct_sig)
         corr_endo = ct_sig["endo_feature"].nunique()
         corr_exog = ct_sig["exog_feature"].nunique()
 
@@ -123,6 +125,23 @@ def main():
                 "Modality": exog_upper,
             }
         )
+        summary_rows.append(
+            {
+                "Cell Type": cell_type,
+                f"Sig {args.endo_modality.upper()}": ct_endo,
+                f"Corr {args.endo_modality.upper()}": corr_endo,
+                f"% {args.endo_modality.upper()} Corr": f"{pct_endo:.1f}%",
+                f"Sig {args.exog_modality.upper()}": ct_exog,
+                f"Corr {args.exog_modality.upper()}": corr_exog,
+                f"% {args.exog_modality.upper()} Corr": f"{pct_exog:.1f}%",
+                "Sig Pairs": pairs,
+            }
+        )
+
+    summary_df = pd.DataFrame(summary_rows)
+    logger.info(
+        f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}"
+    )
 
     plot_df = pd.DataFrame(plot_rows)
 
