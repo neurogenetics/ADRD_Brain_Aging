@@ -157,12 +157,17 @@ def main():
         corr_matrix,
         cmap="vlag",
         annot=True,
+        annot_kws={"size": 8},
         fmt=".2f",
         figsize=(10, 10),
-        cbar_pos=(0.02, 0.8, 0.05, 0.18),
+        cbar_pos=(1.05, 0.2, 0.03, 0.6),
         vmin=-1,
         vmax=1,
+        dendrogram_ratio=0.01,
     )
+    g.ax_row_dendrogram.set_visible(False)
+    g.ax_col_dendrogram.set_visible(False)
+
     g.ax_heatmap.set_title(
         f"Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}",
         pad=20,
