@@ -19,3 +19,16 @@
        * Summary Logging: A detailed statistical table containing these counts and percentages is generated and logged for descriptive reporting.
        * Visualization: A grouped bar plot is generated (using Seaborn) illustrating the percentage of cis-correlated features per cell type,
          stratified by modality. The legend is positioned externally to prevent occlusion of the data.
+
+2. Cell-Type Age Effect Similarity Visualization (celltype_age_effect_similarity.py)
+   * Objective: To visually assess and quantify the similarities between different cell types based on their age-associated feature effect sizes within a specific modality.
+   * Feature Selection:
+       * The script identifies a universal set of significant age-associated features by reading the FDR-filtered results (`_fdr_filtered.age.csv`). A feature is included if it is significant in at least one cell type.
+   * Data Aggregation and Matrix Construction:
+       * Full regression results (`age.csv`) for the selected features are loaded across all cell types.
+       * A feature-by-cell-type matrix is constructed using a user-specified effect size metric (e.g., `coef`, `z`, `log2fc`).
+   * Similarity Computation and Visualization:
+       * A Spearman rank correlation matrix is computed to determine the pairwise similarity between cell types.
+       * A clustered heatmap (using Seaborn's `clustermap`) is generated to visualize these correlations. The dendrograms are hidden for a cleaner aesthetic, and the color bar is positioned externally.
+   * Output:
+       * The resulting heatmap is saved in both PNG and SVG formats within the figures directory.
