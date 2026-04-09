@@ -59,21 +59,18 @@ def main():
 
     # Input files
     endo_fdr_file = results_dir / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
-    cis_fdr_file = results_dir / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.fdr_filtered.csv"
     cond_file = results_dir / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.csv"
 
-    for f in [endo_fdr_file, cis_fdr_file, cond_file]:
+    for f in [endo_fdr_file, cond_file]:
         if not f.exists():
             logger.error(f"Required file not found: {f}")
             return
 
     logger.info("Loading required result files...")
     endo_df = pd.read_csv(endo_fdr_file)
-    cis_df = pd.read_csv(cis_fdr_file)
     cond_df = pd.read_csv(cond_file)
 
     logger.info(f"Loaded {len(endo_df)} endo age-associated features.")
-    logger.info(f"Loaded {len(cis_df)} significant cis-correlated pairs.")
     logger.info(f"Loaded {len(cond_df)} conditioned pairs.")
 
     summary_rows = []
@@ -82,12 +79,9 @@ def main():
     for tissue, group in endo_df.groupby("tissue"):
         tissue_genes = group["feature"].unique()
         
-        tissue_cis = cis_df[cis_df["tissue"] == tissue]
         tissue_cond = cond_df[cond_df["tissue"] == tissue]
         
         for gene in tissue_genes:
-            cis_cor_peaks = tissue_cis[tissue_cis["endo_feature"] == gene].shape[0]
-            
             this_cond = tissue_cond[tissue_cond["endo_feature"] == gene]
             cis_cor_age_peaks = this_cond.shape[0]
             
@@ -98,7 +92,6 @@ def main():
             summary_rows.append({
                 "feature": gene,
                 "tissue": tissue,
-                "cis_cor_peaks": cis_cor_peaks,
                 "cis_cor_age_peaks": cis_cor_age_peaks,
                 "mediating_peak_count": mediating_peak_count
             })
@@ -138,10 +131,9 @@ def main():
     plt.figure(figsize=(11, 11), dpi=100)
     sns.scatterplot(
         data=summary_df.sample(frac=1, random_state=42), 
-        x='cis_cor_peaks', 
+        x='cis_cor_age_peaks', 
         y='mediating_peak_count', 
         hue='tissue', 
-        size='cis_cor_age_peaks', 
         palette='bright'
     )
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0)
