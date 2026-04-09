@@ -32,3 +32,17 @@
        * A clustered heatmap (using Seaborn's `clustermap`) is generated to visualize these correlations. The dendrograms are hidden for a cleaner aesthetic, and the color bar is positioned externally.
    * Output:
        * The resulting heatmap is saved in both PNG and SVG formats within the figures directory.
+
+3. Summarization and Visualization of Cis Conditioned Regression (cis_conditioned_regression_summary.py)
+   * Objective: To summarize and visualize the results of the cis conditioned regression analysis, quantifying the extent to which age-associated genes are mediated by cis-correlated age-associated ATAC peaks.
+   * Data Integration and Mediation Analysis:
+       * File Ingestion: Loads the FDR-filtered age-associated features for the endogenous modality (e.g., RNA) and the regression results of the conditioned pairs.
+       * Mediation Determination: For each endogenous feature, the script checks if conditioning on a cis-correlated ATAC peak causes a loss of significance for the age effect (conditioned exposure p-value > alpha threshold, default 0.05). This loss of significance indicates that the peak mediates the age effect.
+   * Quantification of Mediation Rates:
+       * Calculates the number and percentage of age-associated genes that are mediated by at least one cis-correlated ATAC peak per cell type.
+       * Computes the mean distances between multiple mediating peaks for genes that are mediated by more than one peak.
+   * Reporting and Visualization:
+       * Summary Data: Outputs a tabular CSV summary of the mediation counts and proportions per cell type.
+       * Bar Plot: Generates a bar plot showing the percentage of age-associated genes mediated by a cis-correlated ATAC peak, ordered by cell type.
+       * Distance Boxen Plot: Visualizes the distribution of mean distances (in Kb) between mediating cis proximal peaks across cell types.
+       * Peak Count Boxen Plot: Displays the distribution of the number of mediating cis proximal ATAC peaks per gene across cell types.
