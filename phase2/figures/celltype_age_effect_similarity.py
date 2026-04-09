@@ -145,9 +145,13 @@ def main():
     corr_matrix = pivot_df.corr(method="spearman")
 
     # Plot
-    fig_filename = (
+    fig_filename_png = (
         figures_dir
         / f"{project}.{modality}.{regression_type}.celltype_similarity.{effect_column}.png"
+    )
+    fig_filename_svg = (
+        figures_dir
+        / f"{project}.{modality}.{regression_type}.celltype_similarity.{effect_column}.svg"
     )
     logger.info("Generating clustered heatmap.")
 
@@ -174,10 +178,11 @@ def main():
     g.ax_heatmap.set_xlabel("Cell Type")
     g.ax_heatmap.set_ylabel("Cell Type")
 
-    g.savefig(fig_filename, dpi=300, bbox_inches="tight")
+    g.savefig(fig_filename_png, dpi=300, bbox_inches="tight")
+    g.savefig(fig_filename_svg, dpi=300, bbox_inches="tight")
     plt.close()
 
-    logger.info(f"Saved figure to {fig_filename}")
+    logger.info(f"Saved figures to {fig_filename_png} and {fig_filename_svg}")
 
 
 if __name__ == "__main__":
