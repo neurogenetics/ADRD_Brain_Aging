@@ -51,6 +51,17 @@
          Benjamini-Hochberg (BH) procedure.
        * Output Generation: The pipeline outputs both the complete unfiltered regression results and a subset filtered at a predefined false discovery
          rate (e.g., FDR ≤ 0.05).
-3. Conditioned age regression analysis. Rerun age regression analysis for the age associated GEX features conditioned on <i>cis</i> proximal correlated ATAC features that are also age associated. cis_conditioned_regression_analysis.ipynb.
-    - Summarize the conditioned age regression differences between cell-types. post_cis_conditioned_regression.ipynb
+5. Cis-Conditioned Age Regression (cis_conditioned_regression.py)
+   * Objective: To evaluate whether the age effect on an endogenous feature (e.g., gene expression) persists when conditioning on a proximal, cis-correlated exogenous feature (e.g., ATAC peak) where both are independently age-associated.
+   * Data Selection:
+       * Feature Restraint: Loads previously computed cis-correlations and restricts the analysis solely to pairs where both the endogenous and exogenous features are significantly associated with age (FDR < 0.05).
+       * Re-evaluates FDR strictly on this subset of dual-age-associated pairs to establish the baseline of significantly correlated pairs to test.
+   * Statistical Modeling:
+       * Outcome Model: Implements a Weighted Least Squares (WLS) regression model mirroring the outcome phase of a mediation analysis.
+       * Formula: `Endogenous ~ Age + Exogenous + [Covariates]`. The model controls for covariates (e.g., sex, technical metrics) from both modalities and is weighted by the endogenous feature's sample counts.
+   * Execution & Outputs:
+       * The analysis is parallelized across cell types.
+       * A new FDR correction is applied to the age exposure term.
+       * Outputs full results and an FDR-filtered list (significantly conditioned pairs) into the `results` directory.
+       * Logs the total pairs tested, nominally significant pairs, and the final FDR-significant count.
 
