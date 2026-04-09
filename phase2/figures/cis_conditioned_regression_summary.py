@@ -137,6 +137,7 @@ def main():
     )
     mediated_proportions.to_csv(out_summary_file, index=False)
     logger.info(f"Saved summary proportions table to {out_summary_file}")
+    logger.info(f"Summary proportions table:\n{mediated_proportions.to_string(index=False)}")
 
     # File prefixes for figures
     fig_bar = (
