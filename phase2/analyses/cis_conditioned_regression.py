@@ -55,7 +55,7 @@ def parse_args():
 
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--debug", action="store_true")
-    
+
     return parser.parse_args()
 
 
@@ -91,7 +91,9 @@ def run_single_conditioned_regression(
             "exposure_pval": result.pvalues[exposure],
         }
     except Exception as e:
-        logger.debug(f"Conditioned regression failed for {endo_feature} - {exog_feature}: {e}")
+        logger.debug(
+            f"Conditioned regression failed for {endo_feature} - {exog_feature}: {e}"
+        )
         return {
             "endo_feature": endo_feature,
             "exog_feature": exog_feature,
@@ -251,9 +253,7 @@ def process_cell_type(
     logger.info(
         f"[{cell_type}] Endo covariates: {endo_formula_covariates} | Weight: {endo_weight_term}"
     )
-    logger.info(
-        f"[{cell_type}] Exog covariates: {exog_formula_covariates}"
-    )
+    logger.info(f"[{cell_type}] Exog covariates: {exog_formula_covariates}")
 
     logger.info(
         f"[{cell_type}] Starting conditioned regression analysis on {len(ct_sig_results)} pairs..."
@@ -346,7 +346,7 @@ def main():
 
     logger.info(f"Loading cis results from {cis_results_file}")
     results_df = pd.read_csv(cis_results_file)
-    
+
     # Restrict results to just age associated features in both modalities
     results_df = results_df[
         (results_df["endo_feature"].isin(endo_results["feature"]))
@@ -392,7 +392,9 @@ def main():
     print("\nAll processing complete.")
 
     if not all_results:
-        logger.info("No successful conditioned regressions across any cell types. Exiting.")
+        logger.info(
+            "No successful conditioned regressions across any cell types. Exiting."
+        )
         return
 
     final_results_df = pd.DataFrame(all_results)
@@ -407,7 +409,12 @@ def main():
     # Calculate FDR on the conditioned regression exposure p-value
     final_results_df["exposure_fdr"] = compute_fdr(final_results_df["exposure_pval"])
 
+    total_tested = len(final_results_df)
+    nominally_sig = final_results_df.loc[final_results_df["exposure_pval"] <= 0.05].shape[0]
     total_sig = final_results_df.loc[final_results_df["exposure_fdr"] <= args.fdr_threshold].shape[0]
+
+    logger.info(f"Total pairs tested: {total_tested}")
+    logger.info(f"Total nominally significant conditioned pairs (p-value <= 0.05): {nominally_sig}")
     logger.info(
         f"Found {total_sig} significantly conditioned pairs across all cell types (Exposure FDR <= {args.fdr_threshold})"
     )
@@ -423,7 +430,9 @@ def main():
         results_dir
         / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.fdr_filtered.csv"
     )
-    sig_results_df = final_results_df.loc[final_results_df["exposure_fdr"] <= args.fdr_threshold]
+    sig_results_df = final_results_df.loc[
+        final_results_df["exposure_fdr"] <= args.fdr_threshold
+    ]
     sig_results_df.to_csv(sig_out_file, index=False)
     logger.info(f"Saved significant conditioned regression results to {sig_out_file}")
 
