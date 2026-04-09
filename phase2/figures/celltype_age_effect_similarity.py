@@ -139,7 +139,6 @@ def main():
         logger.warning(
             f"Pivot table contains {missing_pct:.2f}% missing values. Filling with 0."
         )
-        pivot_df = pivot_df.fillna(0)
 
     # Compute Spearman correlation
     logger.info("Computing Spearman correlation matrix.")
