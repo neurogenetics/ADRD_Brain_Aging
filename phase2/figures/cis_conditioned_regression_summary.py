@@ -117,6 +117,7 @@ def main():
         mediated_cnt = tissue_summary[tissue_summary["mediating_peak_count"] > 0].shape[
             0
         ]
+        pairwise_cnt = tissue_summary["mediating_peak_count"].sum()
         mediated_percent = (
             (mediated_cnt / cell_type_cnt * 100) if cell_type_cnt > 0 else 0
         )
@@ -125,7 +126,8 @@ def main():
                 "tissue": tissue,
                 "count": cell_type_cnt,
                 "percent": mediated_percent,
-                "pairwise_cnt": mediated_cnt,
+                "pairwise_cnt": pairwise_cnt,
+                "unique_mediated_features": mediated_cnt,
             }
         )
     mediated_proportions = pd.DataFrame(this_list)
@@ -137,7 +139,9 @@ def main():
     )
     mediated_proportions.to_csv(out_summary_file, index=False)
     logger.info(f"Saved summary proportions table to {out_summary_file}")
-    logger.info(f"Summary proportions table:\n{mediated_proportions.to_string(index=False)}")
+    logger.info(
+        f"Summary proportions table:\n{mediated_proportions.to_string(index=False)}"
+    )
 
     # File prefixes for figures
     fig_bar = (
