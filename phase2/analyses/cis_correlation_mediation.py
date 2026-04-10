@@ -98,10 +98,6 @@ def run_single_mediation(
         med_result = med.fit(n_rep=n_rep)
         summary = med_result.summary()
 
-        print(mediator_formula)
-        print(outcome_formula)
-        print(summary)
-
         # We extract ACME (average), ADE (average), Prop. mediated (average)
         return {
             "endo_feature": endo_feature,
