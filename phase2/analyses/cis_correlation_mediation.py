@@ -77,13 +77,10 @@ def run_single_mediation(
         if exog_covars_str:
             mediator_formula += f" + {exog_covars_str}"
 
-        outcome_covars_list = list(dict.fromkeys(endo_covariates + exog_covariates))
-        outcome_covars_str = (
-            " + ".join(outcome_covars_list) if outcome_covars_list else ""
-        )
+        endog_covars_str = " + ".join(endo_covariates) if endo_covariates else ""
         outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}")'
-        if outcome_covars_str:
-            outcome_formula += f" + {outcome_covars_str}"
+        if endog_covars_str:
+            outcome_formula += f" + {endog_covars_str}"
 
         # Fit models
         mediator_model = smf.wls(
@@ -100,6 +97,10 @@ def run_single_mediation(
         )
         med_result = med.fit(n_rep=n_rep)
         summary = med_result.summary()
+
+        print(mediator_formula)
+        print(outcome_formula)
+        print(summary)
 
         # We extract ACME (average), ADE (average), Prop. mediated (average)
         return {
@@ -449,4 +450,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -32,7 +32,7 @@ def parse_args():
         default="wls",
         choices=["ols", "rlm", "glm", "glm_tweedie", "wls", "vwrlm"],
     )
-    parser.add_argument("--wls-weight-term", type=str, default="cell_counts_endo")
+    parser.add_argument("--wls-weight-term", type=str, default="cell_counts")
     parser.add_argument(
         "--covariates",
         type=str,
@@ -165,11 +165,9 @@ def process_cell_type(
     endo_covars = load_final_covariates(
         info_dir, args.project, cell_type, args.endo_modality, args.debug
     )
-    exog_covars = load_final_covariates(
-        info_dir, args.project, cell_type, args.exog_modality, args.debug
-    )
 
-    # Merge covariates
+    covars = endo_covars.copy()
+
     common_bio_cols = [
         "age",
         "bmi",
@@ -180,20 +178,7 @@ def process_cell_type(
         "smoker",
         "pool",
     ]
-    base_cols = [
-        c
-        for c in common_bio_cols
-        if c in endo_covars.columns and c in exog_covars.columns
-    ]
-
-    endo_spec = [c for c in endo_covars.columns if c not in base_cols]
-    exog_spec = [c for c in exog_covars.columns if c not in base_cols]
-
-    covars = endo_covars[base_cols].copy()
-    for c in endo_spec:
-        covars[f"{c}_endo"] = endo_covars[c]
-    for c in exog_spec:
-        covars[f"{c}_exog"] = exog_covars[c]
+    base_cols = [c for c in common_bio_cols if c in covars.columns]
 
     # Intersect indices
     common_idx = covars.index.intersection(endo_quants.index).intersection(

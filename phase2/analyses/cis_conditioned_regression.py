@@ -43,15 +43,7 @@ def parse_args():
         choices=["none", "all", "knowns", "unknowns", "specified"],
     )
     parser.add_argument("--endo-covariates-list", type=str, nargs="+")
-    parser.add_argument("--endo-weight-term", type=str, default="cell_counts_endo")
-
-    parser.add_argument(
-        "--exog-covariates",
-        type=str,
-        default="all",
-        choices=["none", "all", "knowns", "unknowns", "specified"],
-    )
-    parser.add_argument("--exog-covariates-list", type=str, nargs="+")
+    parser.add_argument("--endo-weight-term", type=str, default="cell_counts")
 
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--debug", action="store_true")
@@ -65,12 +57,11 @@ def run_single_conditioned_regression(
     exog_feature,
     exposure,
     endo_covariates,
-    exog_covariates,
     endo_weight_term,
 ):
     try:
         # Construct formula
-        outcome_covars_list = list(dict.fromkeys(endo_covariates + exog_covariates))
+        outcome_covars_list = list(dict.fromkeys(endo_covariates))
         outcome_covars_str = (
             " + ".join(outcome_covars_list) if outcome_covars_list else ""
         )
@@ -134,35 +125,8 @@ def process_cell_type(
     endo_covars = load_final_covariates(
         info_dir, args.project, cell_type, args.endo_modality, args.debug
     )
-    exog_covars = load_final_covariates(
-        info_dir, args.project, cell_type, args.exog_modality, args.debug
-    )
 
-    # Merge covariates
-    common_bio_cols = [
-        "age",
-        "bmi",
-        "pmi",
-        "ph",
-        "sex",
-        "ancestry",
-        "smoker",
-        "pool",
-    ]
-    base_cols = [
-        c
-        for c in common_bio_cols
-        if c in endo_covars.columns and c in exog_covars.columns
-    ]
-
-    endo_spec = [c for c in endo_covars.columns if c not in base_cols]
-    exog_spec = [c for c in exog_covars.columns if c not in base_cols]
-
-    covars = endo_covars[base_cols].copy()
-    for c in endo_spec:
-        covars[f"{c}_endo"] = endo_covars[c]
-    for c in exog_spec:
-        covars[f"{c}_exog"] = exog_covars[c]
+    covars = endo_covars.copy()
 
     # Intersect indices
     common_idx = covars.index.intersection(endo_quants.index).intersection(
@@ -183,7 +147,7 @@ def process_cell_type(
     data_df = data_df.join(exog_quants[exog_cols_clean])
 
     # Determine covariates
-    def resolve_covariates(arg_covar, arg_covar_list, original_cols, spec_cols, suffix):
+    def resolve_covariates(arg_covar, arg_covar_list, original_cols):
         if arg_covar == "none":
             raw_covars = []
         elif arg_covar == "all":
@@ -197,37 +161,18 @@ def process_cell_type(
         else:
             raw_covars = []
 
-        resolved = []
-        for c in raw_covars:
-            if c in base_cols:
-                resolved.append(c)
-            elif c in spec_cols:
-                resolved.append(f"{c}_{suffix}")
-            else:
-                resolved.append(c)
-        return list(dict.fromkeys(resolved))
+        return list(dict.fromkeys(raw_covars))
 
     endo_formula_covariates = resolve_covariates(
         args.endo_covariates,
         args.endo_covariates_list,
-        endo_covars.columns,
-        endo_spec,
-        "endo",
-    )
-    exog_formula_covariates = resolve_covariates(
-        args.exog_covariates,
-        args.exog_covariates_list,
-        exog_covars.columns,
-        exog_spec,
-        "exog",
+        covars.columns,
     )
 
     endo_weight_term = args.endo_weight_term
 
     if endo_weight_term in endo_formula_covariates:
         endo_formula_covariates.remove(endo_weight_term)
-    if endo_weight_term in exog_formula_covariates:
-        exog_formula_covariates.remove(endo_weight_term)
 
     if endo_weight_term not in data_df.columns:
         raise ValueError(
@@ -235,11 +180,7 @@ def process_cell_type(
         )
 
     all_covar_cols = list(
-        dict.fromkeys(
-            ["age", endo_weight_term]
-            + endo_formula_covariates
-            + exog_formula_covariates
-        )
+        dict.fromkeys(["age", endo_weight_term] + endo_formula_covariates)
     )
 
     before_drop = len(data_df)
@@ -253,7 +194,6 @@ def process_cell_type(
     logger.info(
         f"[{cell_type}] Endo covariates: {endo_formula_covariates} | Weight: {endo_weight_term}"
     )
-    logger.info(f"[{cell_type}] Exog covariates: {exog_formula_covariates}")
 
     logger.info(
         f"[{cell_type}] Starting conditioned regression analysis on {len(ct_sig_results)} pairs..."
@@ -285,7 +225,6 @@ def process_cell_type(
             exog_term,
             exposure="age",
             endo_covariates=endo_formula_covariates,
-            exog_covariates=exog_formula_covariates,
             endo_weight_term=endo_weight_term,
         )
         res["tissue"] = cell_type
@@ -410,11 +349,17 @@ def main():
     final_results_df["exposure_fdr"] = compute_fdr(final_results_df["exposure_pval"])
 
     total_tested = len(final_results_df)
-    nominally_sig = final_results_df.loc[final_results_df["exposure_pval"] <= 0.05].shape[0]
-    total_sig = final_results_df.loc[final_results_df["exposure_fdr"] <= args.fdr_threshold].shape[0]
+    nominally_sig = final_results_df.loc[
+        final_results_df["exposure_pval"] <= 0.05
+    ].shape[0]
+    total_sig = final_results_df.loc[
+        final_results_df["exposure_fdr"] <= args.fdr_threshold
+    ].shape[0]
 
     logger.info(f"Total pairs tested: {total_tested}")
-    logger.info(f"Total nominally significant conditioned pairs (p-value <= 0.05): {nominally_sig}")
+    logger.info(
+        f"Total nominally significant conditioned pairs (p-value <= 0.05): {nominally_sig}"
+    )
     logger.info(
         f"Found {total_sig} significantly conditioned pairs across all cell types (Exposure FDR <= {args.fdr_threshold})"
     )

@@ -100,16 +100,19 @@ def main():
     exog_upper = args.exog_modality.upper()
 
     for cell_type in sorted(cell_types):
-        ct_endo = endo_results[endo_results["tissue"] == cell_type]["feature"].nunique()
-        ct_exog = exog_results[exog_results["tissue"] == cell_type]["feature"].nunique()
-
         ct_sig = sig_results_df[sig_results_df["tissue"] == cell_type]
+
+        # For the denominator, use the number of age-associated features for this specific tissue that were actually tested for cis-correlation
+        tested_df = results_df[results_df["tissue"] == cell_type]
+        tested_endo = tested_df["endo_feature"].nunique()
+        tested_exog = tested_df["exog_feature"].nunique()
+
         pairs = len(ct_sig)
         corr_endo = ct_sig["endo_feature"].nunique()
         corr_exog = ct_sig["exog_feature"].nunique()
 
-        pct_endo = (corr_endo / ct_endo * 100) if ct_endo > 0 else 0
-        pct_exog = (corr_exog / ct_exog * 100) if ct_exog > 0 else 0
+        pct_endo = (corr_endo / tested_endo * 100) if tested_endo > 0 else 0
+        pct_exog = (corr_exog / tested_exog * 100) if tested_exog > 0 else 0
 
         plot_rows.append(
             {
@@ -128,10 +131,10 @@ def main():
         summary_rows.append(
             {
                 "Cell Type": cell_type,
-                f"Sig {args.endo_modality.upper()}": ct_endo,
+                f"Tested {args.endo_modality.upper()}": tested_endo,
                 f"Corr {args.endo_modality.upper()}": corr_endo,
                 f"% {args.endo_modality.upper()} Corr": f"{pct_endo:.1f}%",
-                f"Sig {args.exog_modality.upper()}": ct_exog,
+                f"Tested {args.exog_modality.upper()}": tested_exog,
                 f"Corr {args.exog_modality.upper()}": corr_exog,
                 f"% {args.exog_modality.upper()} Corr": f"{pct_exog:.1f}%",
                 "Sig Pairs": pairs,
