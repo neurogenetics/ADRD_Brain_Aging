@@ -60,7 +60,7 @@ uv run phase2/figures/cis_conditioned_regression_summary.py
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a mediation analysis of these pairs
 tmux new -s brainage
-uv run phase2/analyses/cis_correlation_mediation.py --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates specified --exog-covariates-list PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog --debug
+uv run phase2/analyses/cis_correlation_mediation.py --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates specified --exog-covariates-list PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog
 tmux attach-session -t brainage
 
 # generate latent features per-celltype using cNMF
