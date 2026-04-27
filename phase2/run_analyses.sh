@@ -60,6 +60,7 @@ uv run phase2/figures/cis_conditioned_regression_summary.py
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a mediation analysis of these pairs
 phase2/run_mediation_jobs.sh
+uv run python phase2/analyses/post_cis_correlation_mediation.py
 
 # generate latent features per-celltype using cNMF
 tmux new -s brainage

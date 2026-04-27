@@ -8,4 +8,5 @@ CELLTYPES="Astrocytes Endothelial ExN_BCL11B ExN_CUX2 ExN_LAMP5 ExN_RELN ExN_RMS
 for CELLTYPE in ${CELLTYPES[@]}; do
   echo "Running: phase2/analyses/cis_correlation_mediation.py --cell-type ${CELLTYPE} "
   uv run phase2/analyses/cis_correlation_mediation.py --cell-type ${CELLTYPE} --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates specified --exog-covariates-list PCA_0_exog PCA_1_exog PCA_2_exog PCA_3_exog
+  # uv run phase2/analyses/cis_correlation_mediation.py --cell-type ${CELLTYPE} --endo-covariates specified --endo-covariates-list PCA_0_endo PCA_1_endo PCA_2_endo PCA_3_endo --exog-covariates none
 done

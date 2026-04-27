@@ -72,14 +72,26 @@ def run_single_mediation_task(
     cell_type,
 ):
     try:
+        # Create safe column names to avoid statsmodels Mediation bug with patsy Q()
+        safe_endo = "endo_target"
+        safe_exog = "exog_mediator"
+        
+        # We also need to copy model_df to avoid SettingWithCopyWarning
+        # if the dataframe was a slice, and then rename columns
+        model_df = model_df.copy()
+        model_df = model_df.rename(columns={
+            endo_feature: safe_endo,
+            exog_feature: safe_exog
+        })
+
         # Construct formulas
         exog_covars_str = " + ".join(exog_covariates) if exog_covariates else ""
-        mediator_formula = f'Q("{exog_feature}") ~ {exposure}'
+        mediator_formula = f'{safe_exog} ~ {exposure}'
         if exog_covars_str:
             mediator_formula += f" + {exog_covars_str}"
 
         endog_covars_str = " + ".join(endo_covariates) if endo_covariates else ""
-        outcome_formula = f'Q("{endo_feature}") ~ {exposure} + Q("{exog_feature}")'
+        outcome_formula = f'{safe_endo} ~ {exposure} + {safe_exog}'
         if endog_covars_str:
             outcome_formula += f" + {endog_covars_str}"
 
@@ -94,7 +106,7 @@ def run_single_mediation_task(
             outcome_model,
             mediator_model,
             exposure=exposure,
-            mediator=f'Q("{exog_feature}")',
+            mediator=safe_exog,
         )
         med_result = med.fit(n_rep=n_rep)
         summary = med_result.summary()
