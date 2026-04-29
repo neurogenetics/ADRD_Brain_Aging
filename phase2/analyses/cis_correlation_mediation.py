@@ -27,7 +27,9 @@ def parse_args():
     )
     parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
-    parser.add_argument("--cell-type", type=str, required=True, help="Cell type to process.")
+    parser.add_argument(
+        "--cell-type", type=str, required=True, help="Cell type to process."
+    )
     parser.add_argument("--endo-modality", type=str, default="rna")
     parser.add_argument("--exog-modality", type=str, default="atac")
 
@@ -75,23 +77,22 @@ def run_single_mediation_task(
         # Create safe column names to avoid statsmodels Mediation bug with patsy Q()
         safe_endo = "endo_target"
         safe_exog = "exog_mediator"
-        
+
         # We also need to copy model_df to avoid SettingWithCopyWarning
         # if the dataframe was a slice, and then rename columns
         model_df = model_df.copy()
-        model_df = model_df.rename(columns={
-            endo_feature: safe_endo,
-            exog_feature: safe_exog
-        })
+        model_df = model_df.rename(
+            columns={endo_feature: safe_endo, exog_feature: safe_exog}
+        )
 
         # Construct formulas
         exog_covars_str = " + ".join(exog_covariates) if exog_covariates else ""
-        mediator_formula = f'{safe_exog} ~ {exposure}'
+        mediator_formula = f"{safe_exog} ~ {exposure}"
         if exog_covars_str:
             mediator_formula += f" + {exog_covars_str}"
 
         endog_covars_str = " + ".join(endo_covariates) if endo_covariates else ""
-        outcome_formula = f'{safe_endo} ~ {exposure} + {safe_exog}'
+        outcome_formula = f"{safe_endo} ~ {exposure} + {safe_exog}"
         if endog_covars_str:
             outcome_formula += f" + {endog_covars_str}"
 
@@ -99,7 +100,14 @@ def run_single_mediation_task(
         mediator_model = smf.wls(
             mediator_formula, data=model_df, weights=model_df[exog_weight_term]
         )
-        outcome_model = smf.wls(outcome_formula, data=model_df, weights=model_df[endo_weight_term])
+        outcome_model = smf.wls(
+            outcome_formula, data=model_df, weights=model_df[endo_weight_term]
+        )
+
+        # import statsmodels.api as sm
+        #
+        # mediator_model = sm.OLS.from_formula(mediator_formula, data=model_df)
+        # outcome_model = sm.OLS.from_formula(outcome_formula, data=model_df)
 
         # Mediation analysis
         med = Mediation(
@@ -107,6 +115,8 @@ def run_single_mediation_task(
             mediator_model,
             exposure=exposure,
             mediator=safe_exog,
+            # outcome_fit_kwargs={"cov_type": "HC3"},
+            # mediator_fit_kwargs={"cov_type": "HC3"},
         )
         med_result = med.fit(n_rep=n_rep)
         summary = med_result.summary()
@@ -177,7 +187,9 @@ def main():
     sig_results = pd.read_csv(input_file)
     ct_sig_results = sig_results[sig_results["tissue"] == args.cell_type]
 
-    logger.info(f"Loaded {len(ct_sig_results)} significant pairs for cell type: {args.cell_type}.")
+    logger.info(
+        f"Loaded {len(ct_sig_results)} significant pairs for cell type: {args.cell_type}."
+    )
 
     if len(ct_sig_results) == 0:
         logger.info(f"[{args.cell_type}] No significant cis pairs to process.")
@@ -387,7 +399,10 @@ def main():
 
             counter += 1
             if counter % 100 == 0:
-                print(f"[{args.cell_type}] Processed {counter}/{len(futures)}...", end="\r")
+                print(
+                    f"[{args.cell_type}] Processed {counter}/{len(futures)}...",
+                    end="\r",
+                )
 
     print(f"\n[{args.cell_type}] Completed.")
 
@@ -401,7 +416,9 @@ def main():
     results_df = results_df.dropna(subset=["acme_estimate"])
 
     if len(results_df) == 0:
-        logger.info(f"[{args.cell_type}] All mediation runs failed or resulted in NaNs. Exiting.")
+        logger.info(
+            f"[{args.cell_type}] All mediation runs failed or resulted in NaNs. Exiting."
+        )
         return
 
     # Do not compute FDR here, just save the results for this cell type
@@ -411,6 +428,7 @@ def main():
     )
     results_df.to_csv(out_file, index=False)
     logger.info(f"[{args.cell_type}] Saved uncorrected mediation results to {out_file}")
+
 
 if __name__ == "__main__":
     main()
