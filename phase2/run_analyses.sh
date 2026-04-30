@@ -67,6 +67,8 @@ tmux new -s brainage
 uv run phase2/analyses/cnmf_latent_generation.py --modality rna --covariates sample_id sex gex_pool --components 4 5 6 7 8 9 10 11 12 13 14 15 16
 tmux attach-session -t brainage
 
+uv run phase2/analyses/cnmf_latent_generation.py --cell-type Astrocytes --modality rna --covariates sample_id sex gex_pool --components 4 5 6 7 8 9 10 11 12 13 14 15 16 --workers 1
+
 # review cNMF stability figures and run latent based analysis using the determined K
 # Astrocytes, K=11
 uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Astrocytes --k 11

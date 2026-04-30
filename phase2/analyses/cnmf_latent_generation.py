@@ -4,7 +4,6 @@ import sys
 import multiprocessing
 from pathlib import Path
 
-import scanpy as sc
 from cnmf import cNMF
 
 # Import functions from pseudobulk_convert to reuse loading logic
@@ -38,8 +37,13 @@ def parse_args():
         default=None,
         help="List of technical covariates in obs to regress out using cNMF Preprocess (Harmony).",
     )
-    parser.add_argument("--workers", type=int, default=int(multiprocessing.cpu_count() / 2))
+    parser.add_argument(
+        "--workers", type=int, default=int(multiprocessing.cpu_count() / 2)
+    )
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--cell-type", type=str, required=True, help="Specific cell type to process."
+    )
     return parser.parse_args()
 
 
@@ -262,14 +266,17 @@ def main():
 
     unique_cell_types = adata_modal.obs["cell_label"].unique()
     logger.info(
-        f"Found {len(unique_cell_types)} cell types to process: {unique_cell_types}"
+        f"Available cell types: {unique_cell_types}"
     )
 
-    for ct in unique_cell_types:
-        adata_ct = adata_modal[adata_modal.obs["cell_label"] == ct].copy()
-        process_cell_type(adata_ct, ct, args, cnmf_dir, tmp_dir)
+    if args.cell_type not in unique_cell_types:
+        logger.error(f"Cell type '{args.cell_type}' not found in the dataset.")
+        sys.exit(1)
 
-    logger.info("All cell types processed.")
+    adata_ct = adata_modal[adata_modal.obs["cell_label"] == args.cell_type].copy()
+    process_cell_type(adata_ct, args.cell_type, args, cnmf_dir, tmp_dir)
+
+    logger.info(f"Cell type {args.cell_type} processed.")
 
 
 if __name__ == "__main__":
