@@ -102,7 +102,7 @@ def main():
 
     logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
 
-    cnmf_dir = results_dir / "cnmf"
+    cnmf_dir = results_dir / "latents" / "cnmf"
     logger.info(
         f"Loading cNMF results for {run_name} with K={args.k} and density_threshold={args.density_threshold}"
     )

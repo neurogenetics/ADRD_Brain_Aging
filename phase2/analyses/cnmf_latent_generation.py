@@ -1,10 +1,11 @@
 import argparse
 import logging
 import sys
-import multiprocessing
 from pathlib import Path
 
 from cnmf import cNMF
+import scanpy as sc
+
 
 # Import functions from pseudobulk_convert to reuse loading logic
 from pseudobulk_convert import load_and_prep_data, VAR_MODAL_DICT, MODAL_TYPES_DICT
@@ -37,9 +38,7 @@ def parse_args():
         default=None,
         help="List of technical covariates in obs to regress out using cNMF Preprocess (Harmony).",
     )
-    parser.add_argument(
-        "--workers", type=int, default=int(multiprocessing.cpu_count() / 2)
-    )
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
         "--cell-type", type=str, required=True, help="Specific cell type to process."
@@ -154,10 +153,28 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
             return
     else:
         # Standard approach without preprocessing covariates
+
+        sc.pp.filter_cells(
+            adata_ct, min_genes=200
+        )  # filter cells with fewer than 200 genes
+        sc.pp.filter_cells(
+            adata_ct, min_counts=200
+        )  # This is a weaker threshold than above. It is just to population the n_counts column in adata
+        sc.pp.filter_genes(
+            adata_ct, min_cells=3
+        )  # filter genes detected in fewer than 3 cells
+
         counts_fn = f"{out_base}.counts.h5ad"
-        adata_ct.write_h5ad(counts_fn)
+        # cNMF prepare expects just the raw counts matrix, often stored in an AnnData without extra fluff.
+        # It's safest to create a clean AnnData object for cNMF when not using the Preprocess module.
+        import anndata as ad
+
+        clean_adata = ad.AnnData(
+            X=adata_ct.X, obs=adata_ct.obs.copy(), var=adata_ct.var.copy()
+        )
+        clean_adata.write_h5ad(counts_fn)
         logger.info(
-            f"[{cell_type}] Saved raw counts to {counts_fn} ({adata_ct.shape[0]} cells, {adata_ct.shape[1]} features)"
+            f"[{cell_type}] Saved raw counts to {counts_fn} ({clean_adata.shape[0]} cells, {clean_adata.shape[1]} features)"
         )
 
     # Initialize cNMF
@@ -266,17 +283,16 @@ def main():
     ].copy()
 
     unique_cell_types = adata_modal.obs["cell_label"].unique()
-    logger.info(
-        f"Available cell types: {unique_cell_types}"
-    )
+    logger.info(f"Available cell types: {unique_cell_types}")
 
     if args.cell_type not in unique_cell_types:
         logger.error(f"Cell type '{args.cell_type}' not found in the dataset.")
         sys.exit(1)
 
     adata_ct = adata_modal[adata_modal.obs["cell_label"] == args.cell_type].copy()
-    
+
     import shutil
+
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
     ct_tmp_dir = tmp_dir / run_name
