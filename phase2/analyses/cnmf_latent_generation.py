@@ -228,7 +228,8 @@ def main():
     tmp_dir = work_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    log_filename = logs_dir / f"{args.project}_{args.modality}_run_cnmf.log"
+    safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
+    log_filename = logs_dir / f"{args.project}_{args.modality}_{safe_ct}_run_cnmf.log"
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
