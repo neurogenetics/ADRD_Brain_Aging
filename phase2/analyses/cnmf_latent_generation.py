@@ -275,7 +275,19 @@ def main():
         sys.exit(1)
 
     adata_ct = adata_modal[adata_modal.obs["cell_label"] == args.cell_type].copy()
-    process_cell_type(adata_ct, args.cell_type, args, cnmf_dir, tmp_dir)
+    
+    import shutil
+    safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
+    run_name = f"{args.project}_{safe_ct}_{args.modality}"
+    ct_tmp_dir = tmp_dir / run_name
+    ct_tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        process_cell_type(adata_ct, args.cell_type, args, cnmf_dir, ct_tmp_dir)
+    finally:
+        if ct_tmp_dir.exists():
+            shutil.rmtree(ct_tmp_dir)
+            logger.info(f"Cleaned up temporary directory: {ct_tmp_dir}")
 
     logger.info(f"Cell type {args.cell_type} processed.")
 
