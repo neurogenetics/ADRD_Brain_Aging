@@ -222,7 +222,7 @@ def main():
     logs_dir = work_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    cnmf_dir = results_dir / "cnmf"
+    cnmf_dir = results_dir / "latents" / "cnmf"
     cnmf_dir.mkdir(parents=True, exist_ok=True)
 
     tmp_dir = work_dir / "tmp"
