@@ -28,7 +28,11 @@ def parse_args():
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
     parser.add_argument("--modality", type=str, default="rna", choices=["rna", "atac"])
     parser.add_argument(
-        "--components", type=int, nargs="+", default=[10, 15, 20, 25, 30]
+        "--components",
+        type=int,
+        nargs="+",
+        default=None,
+        help="List of components (K) to evaluate. If not provided, generates a range from 2 to (donors // 2).",
     )
     parser.add_argument("--n-iter", type=int, default=100)
     parser.add_argument("--num-highvar-genes", type=int, default=2000)
@@ -83,13 +87,17 @@ def process_cell_type(
 
         # Filter the AnnData object
         mask = adata_ct.obs["sample_id"].astype(str).isin(valid_donors)
-        logger.info(
-            f"Filtering cells by valid donors. Keeping {mask.sum()} of {len(mask)} cells."
-        )
+        logger.info(f"Filtering cells by valid donors. Keeping {mask.sum()} of {len(mask)} cells.")
         adata_ct = adata_ct[mask].copy()
 
         unique_donors = adata_ct.obs["sample_id"].nunique()
         logger.info(f"Analysis will proceed with {unique_donors} unique donors.")
+
+        components_to_use = args.components
+        if components_to_use is None:
+            max_k = max(2, int(unique_donors / 2))
+            components_to_use = list(range(2, max_k + 1))
+            logger.info(f"Dynamically generated components range to test: {components_to_use}")
 
         if adata_ct.n_obs < 50:
             logger.warning(
@@ -273,7 +281,7 @@ def process_cell_type(
     try:
         cnmf_obj.prepare(
             counts_fn=str(counts_fn),
-            components=args.components,
+            components=components_to_use,
             n_iter=args.n_iter,
             num_highvar_genes=args.num_highvar_genes,
             genes_file=genes_file,
@@ -307,7 +315,7 @@ def process_cell_type(
         logger.error(f"[{cell_type}] cNMF K selection plot failed: {e}")
 
     # Run consensus for all K
-    for k in args.components:
+    for k in components_to_use:
         logger.info(f"[{cell_type}] Running consensus for K={k}...")
         try:
             cnmf_obj.consensus(k=k, density_threshold=0.1, show_clustering=True)
