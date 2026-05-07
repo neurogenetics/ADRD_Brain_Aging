@@ -67,7 +67,7 @@ tmux new -s brainage
 CELLTYPES=("Astrocytes" "Endothelial" "ExN BCL11B" "ExN CUX2" "ExN LAMP5" "ExN RELN" "ExN RMST" "ExN RORB" "ExN SEMA3E" "ExN THEMIS" "InN LAMP5" "InN PAX6" "InN PVALB" "InN SST" "InN VIP" "Microglia" "OPCs" "Oligodendrocytes")
 for CELLTYPE in "${CELLTYPES[@]}"; do
   uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --covariates gex_pool ancestry sample_id sex --components 4 5 6 7 8 9 10 11 12 13 14 15 16
-  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --covariates gex_pool ancestry sample_id sex --components 4 5 6 7 8 9 10 11 12 13 14 15 16
+  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --covariates atac_pool ancestry sample_id sex --components 4 5 6 7 8 9 10 11 12 13 14 15 16
 done
 tmux attach-session -t brainage
 
@@ -124,3 +124,7 @@ uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type OP
 # Oligodendrocytes
 uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Oligodendrocytes --k 7
 uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type Oligodendrocytes --k 15
+
+# combine the cNMF latent regression output and compute FDRs
+uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna
+uv run phase2/analyses/post_cnmf_latent_regressions.py --modality atac
