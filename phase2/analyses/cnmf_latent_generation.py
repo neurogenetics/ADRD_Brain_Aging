@@ -3,6 +3,7 @@ import logging
 import sys
 from pathlib import Path
 
+import pandas as pd
 from cnmf import cNMF
 import scanpy as sc
 
@@ -46,14 +47,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
+def process_cell_type(
+    adata_ct, cell_type, args, cnmf_dir, tmp_dir, results_dir, info_dir
+):
     logger.info(f"--- Processing Cell Type: {cell_type} ---")
     if adata_ct.n_obs < 50:
         logger.warning(f"Skipping {cell_type}: only {adata_ct.n_obs} cells.")
         return
-
-    # cNMF expects dense count arrays or efficiently structured sparse arrays without all zero columns
-    # sc.pp.filter_genes(adata_ct, min_cells=1)
 
     safe_ct = cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
@@ -61,6 +61,94 @@ def process_cell_type(adata_ct, cell_type, args, cnmf_dir, tmp_dir):
 
     genes_file = None
     tpm_fn = None
+
+    # Filter cells based on valid donors from covariates
+    covars_file = (
+        info_dir / f"{args.project}.{safe_ct}.{args.modality}.final_covariates.csv"
+    )
+    if not covars_file.exists():
+        logger.error(f"Covariates file not found: {covars_file}")
+        sys.exit(1)
+
+    logger.info(f"Loading valid donors from covariates file: {covars_file}...")
+    try:
+        # Load the index (first column) which should contain the donor/sample IDs
+        covars_df = pd.read_csv(covars_file, index_col=0)
+        valid_donors = set(covars_df.index.astype(str))
+
+        # Check against 'sample_id' in obs
+        if "sample_id" not in adata_ct.obs.columns:
+            logger.error("'sample_id' column not found in AnnData obs.")
+            sys.exit(1)
+
+        # Filter the AnnData object
+        mask = adata_ct.obs["sample_id"].astype(str).isin(valid_donors)
+        logger.info(
+            f"Filtering cells by valid donors. Keeping {mask.sum()} of {len(mask)} cells."
+        )
+        adata_ct = adata_ct[mask].copy()
+
+        unique_donors = adata_ct.obs["sample_id"].nunique()
+        logger.info(f"Analysis will proceed with {unique_donors} unique donors.")
+
+        if adata_ct.n_obs < 50:
+            logger.warning(
+                f"Skipping {cell_type}: only {adata_ct.n_obs} cells remaining after donor filter."
+            )
+            return
+
+    except Exception as e:
+        logger.error(f"Failed to filter cells by valid donors: {e}")
+        sys.exit(1)
+
+    # Filter features based on age association results (wls)
+    reg_file = results_dir / f"{args.project}.all_celltypes.{args.modality}.wls.age.csv"
+    if not reg_file.exists():
+        logger.error(f"Regression results file not found: {reg_file}")
+        sys.exit(1)
+
+    logger.info(f"Loading regression results from {reg_file} to filter features...")
+    try:
+        reg_df = pd.read_csv(reg_file)
+
+        if "tissue" not in reg_df.columns or "feature" not in reg_df.columns:
+            logger.error(
+                "Regression results must contain 'tissue' and 'feature' columns."
+            )
+            sys.exit(1)
+
+        # Filter for the specific cell type (spaces replaced with underscores)
+        safe_ct_tissue = cell_type.replace(" ", "_")
+        ct_reg_df = reg_df[reg_df["tissue"] == safe_ct_tissue]
+
+        if len(ct_reg_df) == 0:
+            logger.error(
+                f"No regression results found for cell type '{safe_ct_tissue}' in {reg_file}."
+            )
+            sys.exit(1)
+
+        valid_features = set(ct_reg_df["feature"].unique())
+        logger.info(
+            f"Found {len(valid_features)} tested features for {safe_ct_tissue}."
+        )
+
+        # Intersect with the var_names in adata
+        intersecting_features = valid_features.intersection(adata_ct.var_names)
+        logger.info(
+            f"Filtering AnnData to {len(intersecting_features)} overlapping features."
+        )
+
+        if len(intersecting_features) == 0:
+            logger.error(
+                "No overlapping features found between regression results and AnnData."
+            )
+            sys.exit(1)
+
+        adata_ct = adata_ct[:, list(intersecting_features)].copy()
+
+    except Exception as e:
+        logger.error(f"Failed to filter features based on regression results: {e}")
+        sys.exit(1)
 
     if args.covariates:
         # Use cNMF Preprocess module to integrate known technical covariates via Harmony
@@ -236,6 +324,7 @@ def main():
     work_dir = Path(args.work_dir)
     quants_dir = work_dir / "quants"
     results_dir = work_dir / "results"
+    info_dir = work_dir / "sample_info"
     logs_dir = work_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -299,7 +388,9 @@ def main():
     ct_tmp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        process_cell_type(adata_ct, args.cell_type, args, cnmf_dir, ct_tmp_dir)
+        process_cell_type(
+            adata_ct, args.cell_type, args, cnmf_dir, ct_tmp_dir, results_dir, info_dir
+        )
     finally:
         if ct_tmp_dir.exists():
             shutil.rmtree(ct_tmp_dir)
