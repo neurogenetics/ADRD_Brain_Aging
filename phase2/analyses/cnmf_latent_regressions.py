@@ -30,7 +30,12 @@ def parse_args():
     parser.add_argument(
         "--cell-type", type=str, required=True, help="Target cell type."
     )
-    parser.add_argument("--k", type=int, required=True, help="Selected K for cNMF.")
+    parser.add_argument(
+        "--k",
+        type=str,
+        required=True,
+        help="Selected K for cNMF, or 'auto' to automatically select based on the trade-off between stability and error.",
+    )
     parser.add_argument(
         "--density-threshold",
         type=float,
@@ -39,6 +44,36 @@ def parse_args():
     )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
+
+
+def load_df_from_npz(filename):
+    with np.load(filename, allow_pickle=True) as f:
+        obj = pd.DataFrame(**f)
+    return obj
+
+
+def auto_select_k(cnmf_dir, run_name):
+    stats_file = Path(cnmf_dir) / run_name / f"{run_name}.k_selection_stats.df.npz"
+    if not stats_file.exists():
+        raise FileNotFoundError(f"k_selection_stats file not found: {stats_file}")
+
+    stats = load_df_from_npz(stats_file)
+    k_vals = stats["k"].values
+    stability = stats["silhouette"].values
+    error = stats["prediction_error"].values
+
+    # Min-Max normalize
+    S_norm = (stability - np.min(stability)) / (
+        np.max(stability) - np.min(stability) + 1e-9
+    )
+    E_norm = (error - np.min(error)) / (np.max(error) - np.min(error) + 1e-9)
+
+    # Distance to ideal point (S=1, E=0)
+    dist = np.sqrt((1 - S_norm) ** 2 + (E_norm - 0) ** 2)
+    optimal_idx = np.argmin(dist)
+    optimal_k = int(k_vals[optimal_idx])
+
+    return optimal_k, stats_file
 
 
 def main():
@@ -54,9 +89,24 @@ def main():
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
 
-    log_filename = (
-        logs_dir / f"{args.project}_{args.modality}_{safe_ct}_lmm_k{args.k}.log"
-    )
+    cnmf_dir = results_dir / "latents" / "cnmf"
+
+    if args.k.lower() == "auto":
+        try:
+            selected_k, stats_file = auto_select_k(cnmf_dir, run_name)
+            auto_msg = f"Auto-selected K={selected_k} based on distance to ideal point in {stats_file}"
+        except Exception as e:
+            print(f"Failed to automatically select K: {e}")
+            sys.exit(1)
+    else:
+        try:
+            selected_k = int(args.k)
+            auto_msg = None
+        except ValueError:
+            print("--k must be an integer or 'auto'")
+            sys.exit(1)
+
+    log_filename = logs_dir / f"{args.project}_{args.modality}_{safe_ct}_lmm.log"
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
@@ -67,6 +117,8 @@ def main():
     )
 
     logger.info(f"Command line: {' '.join(sys.argv)}")
+    if auto_msg:
+        logger.info(auto_msg)
 
     annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
 
@@ -102,9 +154,8 @@ def main():
 
     logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
 
-    cnmf_dir = results_dir / "latents" / "cnmf"
     logger.info(
-        f"Loading cNMF results for {run_name} with K={args.k} and density_threshold={args.density_threshold}"
+        f"Loading cNMF results for {run_name} with K={selected_k} and density_threshold={args.density_threshold}"
     )
 
     cnmf_obj = cNMF(output_dir=str(cnmf_dir), name=run_name)
@@ -112,11 +163,11 @@ def main():
     try:
         # load_results returns usage, spectra_scores, spectra_tpm, top_genes
         usage, *_ = cnmf_obj.load_results(
-            K=args.k, density_threshold=args.density_threshold
+            K=selected_k, density_threshold=args.density_threshold
         )
     except Exception as e:
         logger.error(
-            f"Failed to load cNMF results. Ensure cNMF consensus has finished for K={args.k}. Error: {e}"
+            f"Failed to load cNMF results. Ensure cNMF consensus has finished for K={selected_k}. Error: {e}"
         )
         sys.exit(1)
 

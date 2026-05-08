@@ -72,58 +72,10 @@ done
 tmux attach-session -t brainage
 
 # review cNMF stability figures and run latent based analysis using the determined K
-# Astrocytes
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Astrocytes --k 16
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type Astrocytes --k 12
-# Endothelial
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Endothelial --k 11
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type Endothelial --k 11
-# ExN_BCL11B
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN BCL11B" --k 13
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN BCL11B" --k 15
-# ExN_CUX2
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN CUX2" --k 14
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN CUX2" --k 16
-# ExN_LAMP5
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN LAMP5" --k 8
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN LAMP5" --k 16
-# ExN_RELN
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RELN" --k 16
-# ExN_RMST
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RMST" --k 10
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN RMST" --k 16
-# ExN_RORB
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN RORB" --k 11
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN RORB" --k 4
-# ExN_SEMA3E
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN SEMA3E" --k 6
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN SEMA3E" --k 5
-# ExN_THEMIS
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "ExN THEMIS" --k 12
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "ExN THEMIS" --k 12
-# InN_LAMP5
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN LAMP5" --k 9
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "InN LAMP5" --k 16
-# InN_PAX6
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN PAX6" --k 7
-# InN_PVALB
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN PVALB" --k 5
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "InN PVALB" --k 16
-# InN_SST
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN SST" --k 8
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "InN SST" --k 5
-# InN_VIP
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "InN VIP" --k 13
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "InN VIP" --k 15
-# Microglia
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Microglia --k 12
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type Microglia --k 16
-# OPCs
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type OPCs --k 14
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type OPCs --k 10
-# Oligodendrocytes
-uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type Oligodendrocytes --k 7
-uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type Oligodendrocytes --k 15
+for CELLTYPE in "${CELLTYPES[@]}"; do
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE"
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE"
+done
 
 # combine the cNMF latent regression output and compute FDRs
 uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna
