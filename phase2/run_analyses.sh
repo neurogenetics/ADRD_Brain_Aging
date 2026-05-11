@@ -73,8 +73,8 @@ tmux attach-session -t brainage
 
 # review cNMF stability figures and run latent based analysis using the determined K
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE"
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE"
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto
 done
 
 # combine the cNMF latent regression output and compute FDRs

@@ -42,6 +42,13 @@ def parse_args():
         default=0.1,
         help="Density threshold used in cNMF.",
     )
+    parser.add_argument(
+        "--covariates",
+        type=str,
+        nargs="*",
+        default=[],
+        help="List of additional covariates to include in the regression formula.",
+    )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -154,6 +161,14 @@ def main():
 
     logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
 
+    # Validate that all covariates exist in obs_df
+    if args.covariates:
+        missing_covariates = [c for c in args.covariates if c not in obs_df.columns]
+        if missing_covariates:
+            logger.error(f"The following specified covariates were not found in the AnnData observations: {missing_covariates}")
+            sys.exit(1)
+        logger.info(f"Including additional covariates: {args.covariates}")
+
     logger.info(
         f"Loading cNMF results for {run_name} with K={selected_k} and density_threshold={args.density_threshold}"
     )
@@ -172,25 +187,35 @@ def main():
         sys.exit(1)
 
     # cNMF usage index corresponds to the cell IDs from the anndata.
-    metadata = obs_df[["age", "sample_id"]].copy()
+    # Deduplicate in case age or sample_id is passed as a covariate
+    cols_to_keep = list(dict.fromkeys(["age", "sample_id"] + args.covariates))
+    metadata = obs_df[cols_to_keep].copy()
     metadata["age"] = pd.to_numeric(metadata["age"], errors="coerce")
 
-    # Drop rows missing age or sample_id
-    metadata = metadata.dropna(subset=["age", "sample_id"])
+    # Drop rows missing data in any of the required columns
+    metadata = metadata.dropna(subset=cols_to_keep)
 
     # Merge metadata with usage by cell IDs
     df = pd.merge(usage, metadata, left_index=True, right_index=True, how="left")
 
     if len(df) == 0:
         logger.error(
-            "No overlapping cells between cNMF results and metadata after dropping NA age/sample_id."
+            "No overlapping cells between cNMF results and metadata after dropping NA."
         )
         sys.exit(1)
 
     logger.info(
         f"Running Linear Mixed Effects Model (MixedLM) for {len(df)} cells across {usage.shape[1]} latent factors."
     )
-    logger.info("Formula: Factor ~ age + (1|sample_id)")
+    
+    base_formula = "latent_factor ~ age"
+    if args.covariates:
+        # Filter out sample_id from the fixed effects formula since it's the random effect grouping variable
+        formula_covariates = [c for c in args.covariates if c != "sample_id"]
+        if formula_covariates:
+            base_formula += " + " + " + ".join(formula_covariates)
+        
+    logger.info(f"Formula: {base_formula} + (1|sample_id)")
 
     lmm_results = []
     # Usage columns represent latent factors (typically numbers or string numbers like '1', '2')
@@ -201,7 +226,7 @@ def main():
 
         # Prepare dataframe for this factor (rename column to avoid formula issues with numeric column names)
         # Using a temporary column name 'latent_factor'
-        formula_df = df[[factor, "age", "sample_id"]].copy()
+        formula_df = df[[factor] + cols_to_keep].copy()
         formula_df.rename(columns={factor: "latent_factor"}, inplace=True)
 
         try:
@@ -210,7 +235,7 @@ def main():
             formula_df = formula_df.dropna()
 
             # Fit the model
-            md = smf.mixedlm("latent_factor ~ age", formula_df, groups="sample_id")
+            md = smf.mixedlm(base_formula, formula_df, groups="sample_id")
             mdf = md.fit()
 
             # Extract statistics for 'age'
