@@ -194,10 +194,18 @@ def run_overlap_permutations(
     bg_bed_df = background_df.copy()
     bg_bed_df["feature_id"] = bg_bed_df.index
     
+    # Map common coordinate columns if they exist
+    col_mapping = {
+        "chr": "chrom",
+        "start": "chromStart",
+        "end": "chromEnd"
+    }
+    bg_bed_df.rename(columns=col_mapping, inplace=True)
+    
     # Check for coordinate columns
     coord_cols = ["chrom", "chromStart", "chromEnd"]
     if not all(col in bg_bed_df.columns for col in coord_cols):
-        logger.warning(f"Background features missing coordinate columns {coord_cols}. Cannot compute overlaps.")
+        logger.warning(f"Background features missing coordinate columns {coord_cols}. Found: {bg_bed_df.columns.tolist()}")
         return None
 
     # Pre-calculate overlaps for the entire background to speed up permutations
