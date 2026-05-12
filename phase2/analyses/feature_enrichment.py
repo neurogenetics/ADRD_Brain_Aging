@@ -183,8 +183,15 @@ def prep_bedtool(df: pd.DataFrame, name_col=None) -> pybedtools.BedTool:
     if name_col and name_col in df.columns:
          cols.append(name_col)
     
-    # Filter and sort
+    # Filter, clean, and sort
     bed_df = df[cols].copy()
+    
+    # Drop any rows with missing coordinates
+    bed_df.dropna(subset=["chrom", "chromStart", "chromEnd"], inplace=True)
+    
+    # Ensure coordinates are integers (required by bedtools)
+    bed_df["chromStart"] = bed_df["chromStart"].astype(int)
+    bed_df["chromEnd"] = bed_df["chromEnd"].astype(int)
     
     # Convert to strings and create a BedTool from the string representation
     bed_str = bed_df.to_csv(sep="\t", index=False, header=False)
