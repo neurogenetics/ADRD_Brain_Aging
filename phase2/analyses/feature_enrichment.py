@@ -7,12 +7,6 @@ import numpy as np
 import pandas as pd
 import pybedtools
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROJECT = "aging_phase2"
@@ -253,6 +247,23 @@ def main():
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
     quants_dir = work_dir / "quants"
+    logs_dir = work_dir / "logs"
+    
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_filename = logs_dir / f"{args.project}.{args.modality}.feature_enrichment.log"
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler(sys.stdout)
+        ],
+        force=True,
+    )
+    
+    logger.info(f"Command line: {' '.join(sys.argv)}")
+    logger.info(f"Logging configured. Writing to {log_filename}")
 
     # 1. Load Data
     wls_file = results_dir / f"{args.project}.all_celltypes.{args.modality}.wls.age.csv"
