@@ -37,6 +37,12 @@ def parse_args():
         help="Data modality (rna or atac).",
     )
     parser.add_argument(
+        "--name",
+        type=str,
+        default="",
+        help="Optional custom name to append to the output and log files (e.g. 'centromere').",
+    )
+    parser.add_argument(
         "--metrics-file",
         type=str,
         help="Path to a pre-computed CSV containing feature metrics.",
@@ -326,8 +332,10 @@ def main():
     quants_dir = work_dir / "quants"
     logs_dir = work_dir / "logs"
     
+    name_suffix = f".{args.name}" if args.name else ""
+    
     logs_dir.mkdir(parents=True, exist_ok=True)
-    log_filename = logs_dir / f"{args.project}.{args.modality}.feature_enrichment.log"
+    log_filename = logs_dir / f"{args.project}.{args.modality}{name_suffix}.feature_enrichment.log"
     
     logging.basicConfig(
         level=logging.INFO,
@@ -499,7 +507,7 @@ def main():
     # 6. Save Results
     if all_results:
         out_df = pd.DataFrame(all_results)
-        out_file = results_dir / f"{args.project}.{args.modality}.feature_enrichment.csv"
+        out_file = results_dir / f"{args.project}.{args.modality}{name_suffix}.feature_enrichment.csv"
         out_df.to_csv(out_file, index=False)
         logger.info(f"Saved enrichment results to {out_file}")
     else:
