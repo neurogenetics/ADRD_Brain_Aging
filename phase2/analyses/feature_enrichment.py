@@ -47,6 +47,11 @@ def parse_args():
         help="Path to a UCSC Table Browser exported CSV containing genomic annotations.",
     )
     parser.add_argument(
+        "--distance",
+        action="store_true",
+        help="Calculate enrichment based on average distance to nearest annotation rather than overlap.",
+    )
+    parser.add_argument(
         "--permutations",
         type=int,
         default=1000,
@@ -62,12 +67,17 @@ def parse_args():
 
 
 def empirical_p_value(observed, permuted):
-    """Calculates empirical p-value for enrichment (observed > expected)."""
+    """Calculates two-tailed empirical p-value."""
     permuted = np.array(permuted)
-    # Proportion of permuted values greater than or equal to the observed value
-    p_val = np.sum(permuted >= observed) / len(permuted)
-    # Ensure p-value is not strictly zero for plotting/log transforms
-    return max(p_val, 1 / (len(permuted) + 1))
+    # Proportion of permuted values greater/less than the observed value
+    p_greater = np.sum(permuted >= observed) / len(permuted)
+    p_less = np.sum(permuted <= observed) / len(permuted)
+    
+    # Two-tailed p-value
+    p_val = min(p_greater, p_less) * 2
+    
+    # Ensure p-value bounds
+    return min(max(p_val, 1 / (len(permuted) + 1)), 1.0)
 
 
 def run_metric_permutations(
@@ -250,6 +260,58 @@ def run_overlap_permutations(
     }
 
 
+def run_distance_permutations(
+    background_df: pd.DataFrame,
+    sig_features: list,
+    annotation_bed: pybedtools.BedTool,
+    n_perms: int,
+):
+    """Permutation test for average distance to nearest genomic annotation."""
+    bg_bed_df = background_df.copy()
+    bg_bed_df["feature_id"] = bg_bed_df.index
+    
+    col_mapping = {"chr": "chrom", "start": "chromStart", "end": "chromEnd"}
+    bg_bed_df.rename(columns=col_mapping, inplace=True)
+    
+    coord_cols = ["chrom", "chromStart", "chromEnd"]
+    if not all(col in bg_bed_df.columns for col in coord_cols):
+        logger.warning(f"Background features missing coordinate columns {coord_cols}.")
+        return None
+
+    # Sort beds before finding closest to ensure proper execution
+    bg_bed = prep_bedtool(bg_bed_df, name_col="feature_id").sort()
+    ann_bed = annotation_bed.sort()
+    
+    # closest -d adds distance as the last column. t="first" handles multiple ties.
+    closest_res = bg_bed.closest(ann_bed, d=True, t="first")
+    
+    feature_distances = {}
+    for interval in closest_res:
+        try:
+            dist = float(interval[-1])
+            # Ignore cases where closest wasn't found (-1)
+            if dist >= 0:
+                feature_distances[interval.name] = dist
+        except (ValueError, IndexError):
+            pass
+            
+    # Attach distances to background df
+    background_df["annotation_distance"] = background_df.index.map(feature_distances)
+    
+    # Drop features with no valid distance (e.g., no annotations on chromosome)
+    valid_bg = background_df.dropna(subset=["annotation_distance"]).copy()
+    valid_sig = [f for f in sig_features if f in valid_bg.index]
+    
+    if len(valid_sig) == 0:
+        return None
+        
+    # We can just reuse run_metric_permutations for this continuous metric!
+    res = run_metric_permutations(valid_bg, valid_sig, ["annotation_distance"], n_perms)
+    if "annotation_distance" in res:
+        return res["annotation_distance"]
+    return None
+
+
 def main():
     args = parse_args()
     work_dir = Path(args.work_dir)
@@ -398,20 +460,34 @@ def main():
                      **res
                  })
                  
-        # Test Overlaps
+        # Test Overlaps or Distance
         if annotation_bed is not None:
-             logger.info(f"  Running overlap permutations for {annotation_name}...")
-             overlap_res = run_overlap_permutations(
-                 ct_features_df, valid_sig, annotation_bed, args.permutations
-             )
-             if overlap_res:
-                 all_results.append({
-                     "cell_type": cell_type,
-                     "modality": args.modality,
-                     "test_type": "overlap",
-                     "test_name": annotation_name,
-                     **overlap_res
-                 })
+             if args.distance:
+                 logger.info(f"  Running distance permutations for {annotation_name}...")
+                 dist_res = run_distance_permutations(
+                     ct_features_df, valid_sig, annotation_bed, args.permutations
+                 )
+                 if dist_res:
+                     all_results.append({
+                         "cell_type": cell_type,
+                         "modality": args.modality,
+                         "test_type": "distance",
+                         "test_name": annotation_name,
+                         **dist_res
+                     })
+             else:
+                 logger.info(f"  Running overlap permutations for {annotation_name}...")
+                 overlap_res = run_overlap_permutations(
+                     ct_features_df, valid_sig, annotation_bed, args.permutations
+                 )
+                 if overlap_res:
+                     all_results.append({
+                         "cell_type": cell_type,
+                         "modality": args.modality,
+                         "test_type": "overlap",
+                         "test_name": annotation_name,
+                         **overlap_res
+                     })
 
     # 6. Save Results
     if all_results:
