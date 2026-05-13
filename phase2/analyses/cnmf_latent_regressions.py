@@ -209,9 +209,48 @@ def main():
     )
     
     base_formula = "latent_factor ~ age"
+    formula_covariates = []
+
     if args.covariates:
+        import patsy
+        import numpy as np
+
         # Filter out sample_id from the fixed effects formula since it's the random effect grouping variable
-        formula_covariates = [c for c in args.covariates if c != "sample_id"]
+        candidates = [c for c in args.covariates if c != "sample_id"]
+        
+        for c in candidates:
+            # Check if the covariate has more than 1 unique value in this subset
+            if df[c].nunique(dropna=True) <= 1:
+                logger.warning(f"Covariate '{c}' has only 1 unique value in this subset. Dropping.")
+            else:
+                formula_covariates.append(c)
+                
+        # Check for multicollinearity among the surviving candidates
+        if formula_covariates:
+            try:
+                # Build a dummy design matrix using the candidate covariates to check rank
+                test_formula = "age ~ " + " + ".join(formula_covariates)
+                # Drop rows with NAs in these specific columns just for the rank test
+                test_df = df[["age"] + formula_covariates].dropna()
+                if len(test_df) > 0:
+                    y, X = patsy.dmatrices(test_formula, test_df, return_type='dataframe')
+                    rank = np.linalg.matrix_rank(X)
+                    
+                    # If rank is less than columns, we have perfect multicollinearity
+                    if rank < X.shape[1]:
+                        logger.warning(f"Perfect multicollinearity detected in covariates {formula_covariates}. Iteratively dropping collinear terms.")
+                        final_covariates = []
+                        for c in formula_covariates:
+                            curr_formula = "age ~ " + " + ".join(final_covariates + [c]) if final_covariates else f"age ~ {c}"
+                            y, X_test = patsy.dmatrices(curr_formula, test_df, return_type='dataframe')
+                            if np.linalg.matrix_rank(X_test) == X_test.shape[1]:
+                                final_covariates.append(c)
+                            else:
+                                logger.warning(f"Dropped '{c}' due to multicollinearity.")
+                        formula_covariates = final_covariates
+            except Exception as e:
+                logger.warning(f"Could not perform pre-emptive collinearity check: {e}")
+
         if formula_covariates:
             base_formula += " + " + " + ".join(formula_covariates)
         
