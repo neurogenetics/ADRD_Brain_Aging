@@ -108,6 +108,15 @@ def main():
     # We only compute FDR on valid p-values.
     results_df["fdr_age"] = compute_fdr(results_df["pval_age"])
 
+    # Log nominally significant results
+    nominal_sig_df = results_df.loc[results_df["pval_age"] <= 0.05]
+    total_nominal_sig = nominal_sig_df.shape[0]
+    logger.info(
+        f"Found {total_nominal_sig} nominally significant factors across all cell types (pval_age <= 0.05)"
+    )
+    if total_nominal_sig > 0:
+        logger.info(f"Nominally significant dataframe subset:\n{nominal_sig_df.to_string(index=False)}")
+
     total_sig = results_df.loc[results_df["fdr_age"] <= 0.05].shape[0]
     logger.info(
         f"Found {total_sig} significant factors across all cell types (FDR_age <= 0.05)"
