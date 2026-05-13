@@ -248,21 +248,50 @@ def process_cell_type(
             )
             return
     else:
+        import numpy as np
         # Standard approach without preprocessing covariates
 
-        sc.pp.filter_cells(
-            adata_ct, min_genes=200
-        )  # filter cells with fewer than 200 genes
-        sc.pp.filter_cells(
-            adata_ct, min_counts=200
-        )  # This is a weaker threshold than above. It is just to population the n_counts column in adata
-        sc.pp.filter_genes(
-            adata_ct, min_cells=3
-        )  # filter genes detected in fewer than 3 cells
+        sc.pp.filter_cells(adata_ct, min_genes=200)
+        sc.pp.filter_cells(adata_ct, min_counts=200)
+        sc.pp.filter_genes(adata_ct, min_cells=3)
+
+        # cNMF crashes if any cell has 0 counts in the highly variable genes (HVGs).
+        # In highly sparse ATAC data, this happens often. To prevent it, we pre-calculate 
+        # the HVGs ourselves, filter cells that have 0 counts across just those HVGs, 
+        # and then pass our HVG list explicitly to cNMF via `genes_file` so it bypasses 
+        # its internal HVG variance selection and uses our EXACT safe list.
+        
+        logger.info(f"[{cell_type}] Pre-calculating HVGs to guarantee no zero-count cells...")
+        temp_adata = adata_ct.copy()
+        sc.pp.normalize_total(temp_adata, target_sum=10000)
+        sc.pp.log1p(temp_adata)
+        sc.pp.highly_variable_genes(temp_adata, n_top_genes=args.num_highvar_genes, flavor="seurat")
+        
+        hvg_mask = temp_adata.var['highly_variable'].values
+        
+        if hasattr(adata_ct.X, "toarray"):
+            hvg_counts = np.array(adata_ct.X[:, hvg_mask].sum(axis=1)).flatten()
+        else:
+            hvg_counts = np.array(adata_ct.X[:, hvg_mask].sum(axis=1)).flatten()
+            
+        cells_to_keep = hvg_counts > 0
+        n_dropped = np.sum(~cells_to_keep)
+        
+        if n_dropped > 0:
+            logger.info(f"[{cell_type}] Dropped {n_dropped} cells with zero counts across the {args.num_highvar_genes} HVGs.")
+            adata_ct = adata_ct[cells_to_keep, :].copy()
+            
+            if adata_ct.n_obs < 50:
+                logger.error(f"[{cell_type}] Too few cells remaining. Aborting.")
+                return
+                
+        # Save our custom HVGs to a file and update the `genes_file` variable!
+        custom_hvgs = temp_adata.var_names[hvg_mask].tolist()
+        genes_file = f"{out_base}_custom_hvgs.txt"
+        with open(genes_file, "w") as f:
+            f.write("\n".join(custom_hvgs))
 
         counts_fn = f"{out_base}.counts.h5ad"
-        # cNMF prepare expects just the raw counts matrix, often stored in an AnnData without extra fluff.
-        # It's safest to create a clean AnnData object for cNMF when not using the Preprocess module.
         import anndata as ad
 
         clean_adata = ad.AnnData(
@@ -270,7 +299,7 @@ def process_cell_type(
         )
         clean_adata.write_h5ad(counts_fn)
         logger.info(
-            f"[{cell_type}] Saved raw counts to {counts_fn} ({clean_adata.shape[0]} cells, {clean_adata.shape[1]} features)"
+            f"[{cell_type}] Saved raw counts to {counts_fn} and custom HVGs to {genes_file}"
         )
 
     # Initialize cNMF
