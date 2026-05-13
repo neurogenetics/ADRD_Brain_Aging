@@ -286,6 +286,7 @@ def main():
             lmm_results.append(
                 {
                     "factor": factor,
+                    "k": selected_k,
                     "coef_age": age_coef,
                     "se_age": age_se,
                     "pval_age": age_pval,
@@ -302,6 +303,7 @@ def main():
             lmm_results.append(
                 {
                     "factor": factor,
+                    "k": selected_k,
                     "coef_age": np.nan,
                     "se_age": np.nan,
                     "pval_age": np.nan,
