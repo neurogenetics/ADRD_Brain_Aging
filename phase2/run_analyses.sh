@@ -48,6 +48,8 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # compute enrichments for age associated features
+uv run phase2/analyses/feature_enrichment.py --modality rna --cell-type-specificity
+uv run phase2/analyses/feature_enrichment.py --modality atac --cell-type-specificity
 uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
 uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_haqer.csv --name haqer
