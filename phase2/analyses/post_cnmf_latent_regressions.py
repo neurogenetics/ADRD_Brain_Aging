@@ -8,6 +8,7 @@ import numpy as np
 from statsmodels.stats import multitest as smm
 from kneed import KneeLocator
 import matplotlib.pyplot as plt
+from adjustText import adjust_text
 
 logger = logging.getLogger(__name__)
 
@@ -234,16 +235,24 @@ def main():
                 # Plot selected top features in red
                 ax.scatter(all_x[:num_top], all_y[:num_top], color='red', s=15, alpha=0.8, label='Selected Top Features')
                 
-                # Label the top 5 features
+                # Label the top 5 features using adjustText to prevent overlap
+                texts = []
                 for i in range(min(5, len(all_y))):
-                    ax.annotate(
-                        all_features[i],
-                        (all_x[i], all_y[i]),
-                        xytext=(5, 5),
-                        textcoords='offset points',
-                        fontsize=9,
-                        color='black'
+                    texts.append(
+                        ax.text(
+                            all_x[i], 
+                            all_y[i], 
+                            all_features[i], 
+                            fontsize=9, 
+                            color='black'
+                        )
                     )
+                
+                if texts:
+                    try:
+                        adjust_text(texts, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))
+                    except Exception as e:
+                        logger.warning(f"adjust_text failed: {e}")
                 
                 # Optionally add a line at the elbow point
                 if num_top > 0 and num_top < len(all_y):
@@ -255,7 +264,7 @@ def main():
                 ax.legend()
                 
                 # Save figures
-                figs_dir = lmm_results_dir / "figures"
+                figs_dir = work_dir / "figures"
                 figs_dir.mkdir(parents=True, exist_ok=True)
                 base_fig_path = figs_dir / f"{args.project}_{ct}_{args.modality}_k{k}_factor{factor}_scores"
                 
