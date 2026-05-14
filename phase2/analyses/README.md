@@ -65,3 +65,17 @@
        * Outputs full results and an FDR-filtered list (significantly conditioned pairs) into the `results` directory.
        * Logs the total pairs tested, nominally significant pairs, and the final FDR-significant count.
 
+6. Latent Factor Generation and Age Association Pipeline
+   * Objective: To discover coordinated networks of features (latent factors) within single-cell data using Consensus Non-negative Matrix Factorization (cNMF), and to subsequently evaluate these factors for significant associations with chronological age using linear mixed-effects modeling.
+   * Latent Factor Generation (cnmf_latent_generation.py):
+       * Data Preparation: Single-cell data is subset by cell type and filtered to retain only cells from valid donors and features used for age-associated regression analysis. Highly variable genes (HVGs) are pre-calculated to ensure stability during factorization.
+       * Covariate Integration: If specified, the cNMF Preprocess module is utilized to regress out known technical covariates via Harmony prior to factorization.
+       * Factorization (cNMF): The pipeline iterates across a defined range of components (K), or dynamically determines the range based on the number of unique donors. It performs multi-processed non-negative matrix factorization, combines the replicates, and executes consensus clustering to define stable latent factors (spectra) and cellular usage scores.
+   * Mixed-Effects Regression (cnmf_latent_regressions.py):
+       * Optimal K Selection: Automatically identifies the optimal number of components (K) by minimizing the distance to the ideal trade-off point between clustering stability (silhouette score) and prediction error, unless a specific K is manually provided.
+       * Statistical Modeling: For each latent factor defined at the selected K, a Linear Mixed Effects Model (MixedLM) is fitted to test the association between cellular usage scores and age. 
+       * Formula Framework: The model takes the form "latent_factor ~ age + [covariates]", incorporating the donor sample ID as a random intercept to account for donor-level baseline variations. Collinear covariates are dynamically identified and dropped to ensure model convergence.
+   * Post-Processing and Feature Extraction (post_cnmf_latent_regressions.py):
+       * Significance Thresholding: Regression results are aggregated across all tested cell types. P-values for the age coefficient are adjusted for multiple comparisons using the Benjamini-Hochberg (BH) procedure to generate a False Discovery Rate (FDR). Factors with an FDR <= 0.05 are deemed significantly associated with age.
+       * Dynamic Feature Selection: For each significant latent factor, the corresponding cNMF feature spectra scores are extracted. A knee-point detection algorithm is applied to the descending curve of positive feature scores to empirically determine the inflection point (elbow). Features with scores exceeding this data-driven threshold are selected as the "top features" driving the latent network.
+       * Visualization: Automatically generates comprehensive scatter plots detailing the spectra scores for all features within significant factors. Selected top features are highlighted, and the top five highest-scoring features are explicitly annotated utilizing collision-avoidance algorithms to prevent label overlap. Outputs are saved as both long-format CSVs and high-resolution figures.
