@@ -4,7 +4,9 @@ from pathlib import Path
 import sys
 
 import pandas as pd
+import numpy as np
 from statsmodels.stats import multitest as smm
+from kneed import KneeLocator
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +131,98 @@ def main():
     sig_out_file = (
         lmm_results_dir / f"{args.project}_combined_{args.modality}_lmm_fdr_filtered.csv"
     )
-    sig_results_df = results_df.loc[results_df["fdr_age"] <= 0.05]
+    sig_results_df = results_df.loc[results_df["fdr_age"] <= 0.05].copy()
     sig_results_df.to_csv(sig_out_file, index=False)
     logger.info(f"Saved significant combined FDR results to {sig_out_file}")
+
+    # Extract top features for significant factors
+    if total_sig > 0:
+        logger.info("Extracting top features using the elbow method for significant factors...")
+        top_features_list = []
+        
+        for row in sig_results_df.itertuples():
+            ct = row.cell_type
+            k = row.k
+            factor = str(row.factor)
+            
+            run_name = f"{args.project}_{ct}_{args.modality}"
+            run_dir = cnmf_dir / run_name
+            
+            if not run_dir.exists():
+                logger.warning(f"cNMF run directory not found: {run_dir}. Skipping feature extraction for {ct} K={k} Factor={factor}.")
+                continue
+                
+            # Find the spectra score file
+            score_files = list(run_dir.glob(f"*spectra_score.k_{k}.dt_*.txt"))
+            if not score_files:
+                logger.warning(f"No spectra score file found for K={k} in {run_dir}. Skipping.")
+                continue
+            
+            score_file = score_files[0]
+            try:
+                scores_df = pd.read_csv(score_file, sep='\t', index_col=0)
+            except Exception as e:
+                logger.error(f"Failed to read {score_file}: {e}")
+                continue
+                
+            # cNMF index contains factors, columns are features
+            # Ensure the factor exists in the index (might be int or str in index)
+            factor_idx = None
+            for idx in scores_df.index:
+                if str(idx) == factor:
+                    factor_idx = idx
+                    break
+                    
+            if factor_idx is None:
+                logger.warning(f"Factor {factor} not found in index of {score_file}. Skipping.")
+                continue
+                
+            # Extract scores for the factor
+            factor_scores = scores_df.loc[factor_idx]
+            
+            # Sort scores descending
+            sorted_scores = factor_scores.sort_values(ascending=False)
+            
+            # Filter to positive scores (optional but recommended for cNMF)
+            positive_scores = sorted_scores[sorted_scores > 0]
+            
+            if len(positive_scores) < 3:
+                logger.warning(f"Not enough positive scores for {ct} K={k} Factor={factor}. Taking top 10 as fallback.")
+                top_features = sorted_scores.head(10)
+            else:
+                y = positive_scores.values
+                x = np.arange(len(y))
+                
+                try:
+                    kneedle = KneeLocator(x, y, S=1.0, curve='convex', direction='decreasing')
+                    elbow_idx = kneedle.knee
+                    
+                    if elbow_idx is not None:
+                        # Extract features up to the elbow point (inclusive)
+                        top_features = positive_scores.iloc[:elbow_idx + 1]
+                    else:
+                        logger.warning(f"Elbow not found for {ct} K={k} Factor={factor}. Fallback to top 100.")
+                        top_features = sorted_scores.head(100)
+                except Exception as e:
+                    logger.warning(f"KneeLocator failed for {ct} K={k} Factor={factor}: {e}. Fallback to top 100.")
+                    top_features = sorted_scores.head(100)
+                    
+            for feat, score in top_features.items():
+                top_features_list.append({
+                    "cell_type": ct,
+                    "k": k,
+                    "factor": factor,
+                    "feature": feat,
+                    "score": score
+                })
+                
+        if top_features_list:
+            top_features_df = pd.DataFrame(top_features_list)
+            top_features_out = lmm_results_dir / f"{args.project}_combined_{args.modality}_lmm_top_features.csv"
+            top_features_df.to_csv(top_features_out, index=False)
+            logger.info(f"Saved extracted top features to {top_features_out}")
+        else:
+            logger.info("No top features were successfully extracted.")
 
 
 if __name__ == "__main__":
