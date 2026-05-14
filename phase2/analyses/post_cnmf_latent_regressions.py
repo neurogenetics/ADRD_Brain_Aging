@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from statsmodels.stats import multitest as smm
 from kneed import KneeLocator
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +216,56 @@ def main():
                     "feature": feat,
                     "score": score
                 })
+                
+            # Create a visualization of the features
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Get all feature scores, sorted
+                all_y = sorted_scores.values
+                all_x = np.arange(len(all_y))
+                all_features = sorted_scores.index
+                
+                num_top = len(top_features)
+                
+                # Plot non-selected features in grey
+                ax.scatter(all_x[num_top:], all_y[num_top:], color='lightgray', s=10, alpha=0.6, label='Other Features')
+                
+                # Plot selected top features in red
+                ax.scatter(all_x[:num_top], all_y[:num_top], color='red', s=15, alpha=0.8, label='Selected Top Features')
+                
+                # Label the top 5 features
+                for i in range(min(5, len(all_y))):
+                    ax.annotate(
+                        all_features[i],
+                        (all_x[i], all_y[i]),
+                        xytext=(5, 5),
+                        textcoords='offset points',
+                        fontsize=9,
+                        color='black'
+                    )
+                
+                # Optionally add a line at the elbow point
+                if num_top > 0 and num_top < len(all_y):
+                    ax.axvline(x=num_top-1, color='black', linestyle='--', alpha=0.5, label='Elbow cutoff')
+                
+                ax.set_title(f"cNMF Feature Scores\nCell Type: {ct} | Modality: {args.modality.upper()} | K: {k} | Factor: {factor}")
+                ax.set_xlabel("Feature Rank")
+                ax.set_ylabel("Spectra Score")
+                ax.legend()
+                
+                # Save figures
+                figs_dir = lmm_results_dir / "figures"
+                figs_dir.mkdir(parents=True, exist_ok=True)
+                base_fig_path = figs_dir / f"{args.project}_{ct}_{args.modality}_k{k}_factor{factor}_scores"
+                
+                fig.savefig(f"{base_fig_path}.png", bbox_inches='tight', dpi=300)
+                fig.savefig(f"{base_fig_path}.svg", bbox_inches='tight')
+                plt.close(fig)
+                logger.debug(f"Saved visualization to {base_fig_path}.png/.svg")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate visualization for {ct} K={k} Factor={factor}: {e}")
                 
         if top_features_list:
             top_features_df = pd.DataFrame(top_features_list)

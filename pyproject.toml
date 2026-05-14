@@ -12,6 +12,7 @@ dependencies = [
     "jupyterlab>=4.4.7",
     "jupyterlab-git>=0.51.2",
     "kneed>=0.8.5",
+    "matplotlib>=3.10.6",
     "prince>=0.16.5",
     "pybedtools>=0.12.0",
     "pygraphviz>=1.14",
