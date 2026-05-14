@@ -213,7 +213,6 @@ def main():
 
     if args.covariates:
         import patsy
-        import numpy as np
 
         # Filter out sample_id from the fixed effects formula since it's the random effect grouping variable
         candidates = [c for c in args.covariates if c != "sample_id"]
