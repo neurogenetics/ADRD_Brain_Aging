@@ -68,12 +68,6 @@ def parse_args():
         default=1000,
         help="Number of permutations to run (default: 1000).",
     )
-    parser.add_argument(
-        "--fdr-threshold",
-        type=float,
-        default=0.05,
-        help="FDR threshold for defining significant features (default: 0.05).",
-    )
     return parser.parse_args()
 
 
@@ -365,6 +359,14 @@ def main():
     logger.info(f"Loading WLS results from {wls_file}")
     wls_df = pd.read_csv(wls_file)
 
+    wls_filtered_file = results_dir / f"{args.project}.{args.modality}.all_celltypes.wls_fdr_filtered.age.csv"
+    if not wls_filtered_file.exists():
+        logger.error(f"Filtered WLS results file not found: {wls_filtered_file}")
+        sys.exit(1)
+
+    logger.info(f"Loading filtered WLS results from {wls_filtered_file}")
+    wls_filtered_df = pd.read_csv(wls_filtered_file)
+
     # 2. Load Feature Coordinates
     features_file = quants_dir / f"{args.project}.features.csv"
     if not features_file.exists():
@@ -454,9 +456,8 @@ def main():
         bg_features = ct_group[feature_col].unique()
 
         # Significant pool
-        sig_features = ct_group[ct_group["fdr_bh"] < args.fdr_threshold][
-            feature_col
-        ].unique()
+        ct_filtered_group = wls_filtered_df[wls_filtered_df["tissue"] == cell_type]
+        sig_features = ct_filtered_group[feature_col].unique()
 
         logger.info(f"  Background features: {len(bg_features)}")
         logger.info(f"  Significant features: {len(sig_features)}")
