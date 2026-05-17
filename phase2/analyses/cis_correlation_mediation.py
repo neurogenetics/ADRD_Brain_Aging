@@ -1,0 +1,434 @@
+import argparse
+import concurrent.futures
+import logging
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from statsmodels.stats.mediation import Mediation
+
+# Import functions from pseudobulk_regression
+from pseudobulk_regression import (
+    load_final_covariates,
+    load_quants,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PROJECT = "aging_phase2"
+DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run mediation analysis (age -> exog -> endo)."
+    )
+    parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
+    parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
+    parser.add_argument(
+        "--cell-type", type=str, required=True, help="Cell type to process."
+    )
+    parser.add_argument("--endo-modality", type=str, default="rna")
+    parser.add_argument("--exog-modality", type=str, default="atac")
+
+    parser.add_argument(
+        "--endo-covariates",
+        type=str,
+        default="all",
+        choices=["none", "all", "knowns", "unknowns", "specified"],
+    )
+    parser.add_argument("--endo-covariates-list", type=str, nargs="+")
+    parser.add_argument("--endo-weight-term", type=str, default="cell_counts_endo")
+
+    parser.add_argument(
+        "--exog-covariates",
+        type=str,
+        default="all",
+        choices=["none", "all", "knowns", "unknowns", "specified"],
+    )
+    parser.add_argument("--exog-covariates-list", type=str, nargs="+")
+    parser.add_argument("--exog-weight-term", type=str, default="cell_counts_exog")
+
+    parser.add_argument(
+        "--n-rep",
+        type=int,
+        default=1000,
+        help="Number of bootstrap replications for mediation.",
+    )
+    parser.add_argument("--debug", action="store_true")
+    return parser.parse_args()
+
+
+def run_single_mediation_task(
+    model_df,
+    endo_feature,
+    exog_feature,
+    exposure,
+    endo_covariates,
+    exog_covariates,
+    endo_weight_term,
+    exog_weight_term,
+    n_rep,
+    cell_type,
+):
+    try:
+        # Create safe column names to avoid statsmodels Mediation bug with patsy Q()
+        safe_endo = "endo_target"
+        safe_exog = "exog_mediator"
+
+        # We also need to copy model_df to avoid SettingWithCopyWarning
+        # if the dataframe was a slice, and then rename columns
+        model_df = model_df.copy()
+        model_df = model_df.rename(
+            columns={endo_feature: safe_endo, exog_feature: safe_exog}
+        )
+
+        # Construct formulas
+        exog_covars_str = " + ".join(exog_covariates) if exog_covariates else ""
+        mediator_formula = f"{safe_exog} ~ {exposure}"
+        if exog_covars_str:
+            mediator_formula += f" + {exog_covars_str}"
+
+        endog_covars_str = " + ".join(endo_covariates) if endo_covariates else ""
+        outcome_formula = f"{safe_endo} ~ {exposure} + {safe_exog}"
+        if endog_covars_str:
+            outcome_formula += f" + {endog_covars_str}"
+
+        # Fit models
+        mediator_model = smf.wls(
+            mediator_formula, data=model_df, weights=model_df[exog_weight_term]
+        )
+        outcome_model = smf.wls(
+            outcome_formula, data=model_df, weights=model_df[endo_weight_term]
+        )
+
+        # import statsmodels.api as sm
+        #
+        # mediator_model = sm.OLS.from_formula(mediator_formula, data=model_df)
+        # outcome_model = sm.OLS.from_formula(outcome_formula, data=model_df)
+
+        # Mediation analysis
+        med = Mediation(
+            outcome_model,
+            mediator_model,
+            exposure=exposure,
+            mediator=safe_exog,
+            # outcome_fit_kwargs={"cov_type": "HC3"},
+            # mediator_fit_kwargs={"cov_type": "HC3"},
+        )
+        med_result = med.fit(n_rep=n_rep)
+        summary = med_result.summary()
+
+        # We extract ACME (average), ADE (average), Prop. mediated (average)
+        return {
+            "endo_feature": endo_feature,
+            "exog_feature": exog_feature,
+            "acme_estimate": summary.loc["ACME (average)", "Estimate"],
+            "acme_pval": summary.loc["ACME (average)", "P-value"],
+            "ade_estimate": summary.loc["ADE (average)", "Estimate"],
+            "ade_pval": summary.loc["ADE (average)", "P-value"],
+            "prop_mediated_estimate": summary.loc[
+                "Prop. mediated (average)", "Estimate"
+            ],
+            "prop_mediated_pval": summary.loc["Prop. mediated (average)", "P-value"],
+            "total_effect_estimate": summary.loc["Total effect", "Estimate"],
+            "total_effect_pval": summary.loc["Total effect", "P-value"],
+            "tissue": cell_type,
+        }
+    except Exception as e:
+        logger.debug(f"Mediation failed for {endo_feature} - {exog_feature}: {e}")
+        return {
+            "endo_feature": endo_feature,
+            "exog_feature": exog_feature,
+            "acme_estimate": np.nan,
+            "acme_pval": np.nan,
+            "ade_estimate": np.nan,
+            "ade_pval": np.nan,
+            "prop_mediated_estimate": np.nan,
+            "prop_mediated_pval": np.nan,
+            "total_effect_estimate": np.nan,
+            "total_effect_pval": np.nan,
+            "tissue": cell_type,
+        }
+
+
+def main():
+    args = parse_args()
+
+    work_dir = Path(args.work_dir)
+    quants_dir = work_dir / "quants"
+    info_dir = work_dir / "sample_info"
+    results_dir = work_dir / "results"
+    logs_dir = work_dir / "logs"
+
+    log_filename = f"{logs_dir}/{args.cell_type}_{args.endo_modality}_{args.exog_modality}_wls_mediation.log"
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
+        force=True,
+    )
+    logger.info(f"Command line: {' '.join(sys.argv)}")
+
+    # Load cis fdr filtered results
+    # Defaulting to wls regression type for the input file name since we only do wls mediation
+    input_file = (
+        results_dir
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.wls.cis.fdr_filtered.csv"
+    )
+    logger.info(f"Loading significant cis correlations from {input_file}")
+
+    if not input_file.exists():
+        logger.error(f"Input file not found: {input_file}")
+        sys.exit(1)
+
+    sig_results = pd.read_csv(input_file)
+    ct_sig_results = sig_results[sig_results["tissue"] == args.cell_type]
+
+    logger.info(
+        f"Loaded {len(ct_sig_results)} significant pairs for cell type: {args.cell_type}."
+    )
+
+    if len(ct_sig_results) == 0:
+        logger.info(f"[{args.cell_type}] No significant cis pairs to process.")
+        return
+
+    # Load quants
+    logger.info(f"[{args.cell_type}] Loading quantifications...")
+    endo_quants = load_quants(
+        quants_dir, args.project, args.cell_type, args.endo_modality, args.debug
+    )
+    exog_quants = load_quants(
+        quants_dir, args.project, args.cell_type, args.exog_modality, args.debug
+    )
+
+    # Load covariates
+    logger.info(f"[{args.cell_type}] Loading covariates...")
+    endo_covars = load_final_covariates(
+        info_dir, args.project, args.cell_type, args.endo_modality, args.debug
+    )
+    exog_covars = load_final_covariates(
+        info_dir, args.project, args.cell_type, args.exog_modality, args.debug
+    )
+
+    # Merge covariates
+    common_bio_cols = [
+        "age",
+        "bmi",
+        "pmi",
+        "ph",
+        "sex",
+        "ancestry",
+        "smoker",
+        "pool",
+    ]
+    base_cols = [
+        c
+        for c in common_bio_cols
+        if c in endo_covars.columns and c in exog_covars.columns
+    ]
+
+    endo_spec = [c for c in endo_covars.columns if c not in base_cols]
+    exog_spec = [c for c in exog_covars.columns if c not in base_cols]
+
+    covars = endo_covars[base_cols].copy()
+    for c in endo_spec:
+        covars[f"{c}_endo"] = endo_covars[c]
+    for c in exog_spec:
+        covars[f"{c}_exog"] = exog_covars[c]
+
+    # Intersect indices
+    common_idx = covars.index.intersection(endo_quants.index).intersection(
+        exog_quants.index
+    )
+    logger.info(f"[{args.cell_type}] Number of common samples: {len(common_idx)}")
+    covars = covars.loc[common_idx]
+    endo_quants = endo_quants.loc[common_idx]
+    exog_quants = exog_quants.loc[common_idx]
+
+    data_df = covars.copy()
+
+    unique_endo = set(ct_sig_results["endo_feature"])
+    unique_exog = set(ct_sig_results["exog_feature"])
+
+    endo_cols_to_keep = [c for c in unique_endo if c in endo_quants.columns]
+    exog_cols_to_keep = [c for c in unique_exog if c in exog_quants.columns]
+
+    data_df = data_df.join(endo_quants[endo_cols_to_keep])
+    exog_cols_clean = [c for c in exog_cols_to_keep if c not in data_df.columns]
+    data_df = data_df.join(exog_quants[exog_cols_clean])
+
+    # Determine covariates
+    def resolve_covariates(arg_covar, arg_covar_list, original_cols, spec_cols, suffix):
+        if arg_covar == "none":
+            raw_covars = []
+        elif arg_covar == "all":
+            raw_covars = [c for c in original_cols if c != "age"]
+        elif arg_covar == "knowns":
+            raw_covars = [c for c in original_cols if not ("PCA_" in c) and c != "age"]
+        elif arg_covar == "unknowns":
+            raw_covars = [c for c in original_cols if ("PCA_" in c)]
+        elif arg_covar == "specified":
+            raw_covars = [c for c in arg_covar_list if c != "age"]
+        else:
+            raw_covars = []
+
+        resolved = []
+        for c in raw_covars:
+            if c in base_cols:
+                resolved.append(c)
+            elif c in spec_cols:
+                resolved.append(f"{c}_{suffix}")
+            else:
+                resolved.append(c)
+        return list(dict.fromkeys(resolved))
+
+    endo_formula_covariates = resolve_covariates(
+        args.endo_covariates,
+        args.endo_covariates_list,
+        endo_covars.columns,
+        endo_spec,
+        "endo",
+    )
+    exog_formula_covariates = resolve_covariates(
+        args.exog_covariates,
+        args.exog_covariates_list,
+        exog_covars.columns,
+        exog_spec,
+        "exog",
+    )
+
+    endo_weight_term = args.endo_weight_term
+    exog_weight_term = args.exog_weight_term
+
+    if endo_weight_term in endo_formula_covariates:
+        endo_formula_covariates.remove(endo_weight_term)
+    if endo_weight_term in exog_formula_covariates:
+        exog_formula_covariates.remove(endo_weight_term)
+
+    if exog_weight_term in exog_formula_covariates:
+        exog_formula_covariates.remove(exog_weight_term)
+    if exog_weight_term in endo_formula_covariates:
+        endo_formula_covariates.remove(exog_weight_term)
+
+    if endo_weight_term not in data_df.columns:
+        raise ValueError(
+            f"[{args.cell_type}] endo_weight_term '{endo_weight_term}' not found in covariates."
+        )
+    if exog_weight_term not in data_df.columns:
+        raise ValueError(
+            f"[{args.cell_type}] exog_weight_term '{exog_weight_term}' not found in covariates."
+        )
+
+    all_covar_cols = list(
+        dict.fromkeys(
+            ["age", endo_weight_term, exog_weight_term]
+            + endo_formula_covariates
+            + exog_formula_covariates
+        )
+    )
+
+    # Check consistency globally across all expected covariates to ensure identically matched samples
+    # before evaluating individual genes. Features with missing values aren't an issue unless they
+    # are specifically evaluated in a pair, which we'll handle gracefully.
+    before_drop = len(data_df)
+    data_df = data_df.dropna(subset=all_covar_cols)
+    after_drop = len(data_df)
+
+    logger.info(
+        f"[{args.cell_type}] Dropped {before_drop - after_drop} samples due to missing covariate/weight values. Remaining: {after_drop}"
+    )
+
+    logger.info(
+        f"[{args.cell_type}] Endo covariates: {endo_formula_covariates} | Weight: {endo_weight_term}"
+    )
+    logger.info(
+        f"[{args.cell_type}] Exog covariates: {exog_formula_covariates} | Weight: {exog_weight_term}"
+    )
+
+    logger.info(
+        f"[{args.cell_type}] Starting mediation analysis on {len(ct_sig_results)} pairs..."
+    )
+
+    results = []
+    total_comparisons = len(ct_sig_results)
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = []
+        for idx, row in ct_sig_results.iterrows():
+            endo_term = row["endo_feature"]
+            exog_term = row["exog_feature"]
+
+            if endo_term not in data_df.columns or exog_term not in data_df.columns:
+                continue
+
+            pair_cols = all_covar_cols + [endo_term, exog_term]
+            model_df = data_df[pair_cols].dropna()
+
+            if len(model_df) < 10:
+                logger.debug(
+                    f"[{args.cell_type}] Mediation failed for {endo_term} - {exog_term}: Too few samples ({len(model_df)})."
+                )
+                continue
+
+            futures.append(
+                executor.submit(
+                    run_single_mediation_task,
+                    model_df,
+                    endo_term,
+                    exog_term,
+                    "age",
+                    endo_formula_covariates,
+                    exog_formula_covariates,
+                    endo_weight_term,
+                    exog_weight_term,
+                    args.n_rep,
+                    args.cell_type,
+                )
+            )
+
+        counter = 0
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                res = future.result()
+                results.append(res)
+            except Exception as e:
+                logger.error(f"Exception during task execution: {e}")
+
+            counter += 1
+            if counter % 100 == 0:
+                print(
+                    f"[{args.cell_type}] Processed {counter}/{len(futures)}...",
+                    end="\r",
+                )
+
+    print(f"\n[{args.cell_type}] Completed.")
+
+    if not results:
+        logger.info(f"[{args.cell_type}] No successful mediations. Exiting.")
+        return
+
+    results_df = pd.DataFrame(results)
+
+    # Filter out missing results
+    results_df = results_df.dropna(subset=["acme_estimate"])
+
+    if len(results_df) == 0:
+        logger.info(
+            f"[{args.cell_type}] All mediation runs failed or resulted in NaNs. Exiting."
+        )
+        return
+
+    # Do not compute FDR here, just save the results for this cell type
+    out_file = (
+        results_dir
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.cell_type}.wls.mediation.csv"
+    )
+    results_df.to_csv(out_file, index=False)
+    logger.info(f"[{args.cell_type}] Saved uncorrected mediation results to {out_file}")
+
+
+if __name__ == "__main__":
+    main()
