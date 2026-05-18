@@ -48,6 +48,9 @@ def parse_args():
     parser.add_argument(
         "--cell-type", type=str, required=True, help="Specific cell type to process."
     )
+    parser.add_argument(
+        "--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path."
+    )
     return parser.parse_args()
 
 
@@ -365,7 +368,7 @@ def main():
     logs_dir = work_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    cnmf_dir = results_dir / "latents" / "cnmf"
+    cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
     cnmf_dir.mkdir(parents=True, exist_ok=True)
 
     tmp_dir = work_dir / "tmp"

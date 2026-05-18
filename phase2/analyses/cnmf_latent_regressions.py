@@ -50,6 +50,9 @@ def parse_args():
         help="List of additional covariates to include in the regression formula.",
     )
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path."
+    )
     return parser.parse_args()
 
 
@@ -96,7 +99,7 @@ def main():
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
 
-    cnmf_dir = results_dir / "latents" / "cnmf"
+    cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
 
     if args.k.lower() == "auto":
         try:

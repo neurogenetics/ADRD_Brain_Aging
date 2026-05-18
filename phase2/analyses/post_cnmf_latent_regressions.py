@@ -35,6 +35,9 @@ def parse_args():
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
     parser.add_argument("--modality", type=str, default="rna", choices=["rna", "atac"])
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path."
+    )
     return parser.parse_args()
 
 
@@ -54,7 +57,7 @@ def main():
     )
     logger.info(f"Command line: {' '.join(sys.argv)}")
 
-    cnmf_dir = results_dir / "latents" / "cnmf"
+    cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
     lmm_results_dir = cnmf_dir / "lmm_results"
 
     if not lmm_results_dir.exists():
