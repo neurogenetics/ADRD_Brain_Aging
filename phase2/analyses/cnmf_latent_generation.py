@@ -49,7 +49,15 @@ def parse_args():
         "--cell-type", type=str, required=True, help="Specific cell type to process."
     )
     parser.add_argument(
-        "--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path."
+        "--cnmf-dir-name",
+        type=str,
+        default="cnmf",
+        help="Name of the cnmf output directory within the latents path.",
+    )
+    parser.add_argument(
+        "--use-aaf",
+        action="store_true",
+        help="Use the union of age-associated features across all cell types that were tested in the target cell type.",
     )
     return parser.parse_args()
 
@@ -90,7 +98,9 @@ def process_cell_type(
 
         # Filter the AnnData object
         mask = adata_ct.obs["sample_id"].astype(str).isin(valid_donors)
-        logger.info(f"Filtering cells by valid donors. Keeping {mask.sum()} of {len(mask)} cells.")
+        logger.info(
+            f"Filtering cells by valid donors. Keeping {mask.sum()} of {len(mask)} cells."
+        )
         adata_ct = adata_ct[mask].copy()
 
         unique_donors = adata_ct.obs["sample_id"].nunique()
@@ -100,7 +110,9 @@ def process_cell_type(
         if components_to_use is None:
             max_k = max(2, int(unique_donors / 2))
             components_to_use = list(range(2, max_k + 1))
-            logger.info(f"Dynamically generated components range to test: {components_to_use}")
+            logger.info(
+                f"Dynamically generated components range to test: {components_to_use}"
+            )
 
         if adata_ct.n_obs < 50:
             logger.warning(
@@ -142,6 +154,33 @@ def process_cell_type(
         logger.info(
             f"Found {len(valid_features)} tested features for {safe_ct_tissue}."
         )
+
+        if args.use_aaf:
+            fdr_reg_file = (
+                results_dir
+                / f"{args.project}.{args.modality}.all_celltypes.wls_fdr_filtered.age.csv"
+            )
+            if not fdr_reg_file.exists():
+                logger.error(f"FDR Regression results file not found: {fdr_reg_file}")
+                sys.exit(1)
+
+            logger.info(
+                f"Loading FDR regression results from {fdr_reg_file} to construct union of age features..."
+            )
+            fdr_reg_df = pd.read_csv(fdr_reg_file)
+            if "feature" not in fdr_reg_df.columns:
+                logger.error("FDR Regression results must contain 'feature' column.")
+                sys.exit(1)
+
+            union_features = set(fdr_reg_df["feature"].unique())
+            logger.info(
+                f"Found {len(union_features)} unique age-associated features across all cell types."
+            )
+
+            valid_features = valid_features.intersection(union_features)
+            logger.info(
+                f"Filtered to {len(valid_features)} tested features that are in the age-associated union set."
+            )
 
         # Intersect with the var_names in adata
         intersecting_features = valid_features.intersection(adata_ct.var_names)
@@ -259,35 +298,41 @@ def process_cell_type(
         sc.pp.filter_genes(adata_ct, min_cells=3)
 
         # cNMF crashes if any cell has 0 counts in the highly variable genes (HVGs).
-        # In highly sparse ATAC data, this happens often. To prevent it, we pre-calculate 
-        # the HVGs ourselves, filter cells that have 0 counts across just those HVGs, 
-        # and then pass our HVG list explicitly to cNMF via `genes_file` so it bypasses 
+        # In highly sparse ATAC data, this happens often. To prevent it, we pre-calculate
+        # the HVGs ourselves, filter cells that have 0 counts across just those HVGs,
+        # and then pass our HVG list explicitly to cNMF via `genes_file` so it bypasses
         # its internal HVG variance selection and uses our EXACT safe list.
-        
-        logger.info(f"[{cell_type}] Pre-calculating HVGs to guarantee no zero-count cells...")
+
+        logger.info(
+            f"[{cell_type}] Pre-calculating HVGs to guarantee no zero-count cells..."
+        )
         temp_adata = adata_ct.copy()
         sc.pp.normalize_total(temp_adata, target_sum=10000)
         sc.pp.log1p(temp_adata)
-        sc.pp.highly_variable_genes(temp_adata, n_top_genes=args.num_highvar_genes, flavor="seurat")
-        
-        hvg_mask = temp_adata.var['highly_variable'].values
-        
+        sc.pp.highly_variable_genes(
+            temp_adata, n_top_genes=args.num_highvar_genes, flavor="seurat"
+        )
+
+        hvg_mask = temp_adata.var["highly_variable"].values
+
         if hasattr(adata_ct.X, "toarray"):
             hvg_counts = np.array(adata_ct.X[:, hvg_mask].sum(axis=1)).flatten()
         else:
             hvg_counts = np.array(adata_ct.X[:, hvg_mask].sum(axis=1)).flatten()
-            
+
         cells_to_keep = hvg_counts > 0
         n_dropped = np.sum(~cells_to_keep)
-        
+
         if n_dropped > 0:
-            logger.info(f"[{cell_type}] Dropped {n_dropped} cells with zero counts across the {args.num_highvar_genes} HVGs.")
+            logger.info(
+                f"[{cell_type}] Dropped {n_dropped} cells with zero counts across the {args.num_highvar_genes} HVGs."
+            )
             adata_ct = adata_ct[cells_to_keep, :].copy()
-            
+
             if adata_ct.n_obs < 50:
                 logger.error(f"[{cell_type}] Too few cells remaining. Aborting.")
                 return
-                
+
         # Save our custom HVGs to a file and update the `genes_file` variable!
         custom_hvgs = temp_adata.var_names[hvg_mask].tolist()
         genes_file = f"{out_base}_custom_hvgs.txt"

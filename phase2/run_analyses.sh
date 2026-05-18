@@ -81,8 +81,8 @@ CELLTYPES=("Astrocytes" "Endothelial" "ExN BCL11B" "ExN CUX2" "ExN LAMP5" "ExN R
 for CELLTYPE in "${CELLTYPES[@]}"; do
   # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --covariates gex_pool ancestry sample_id sex
   # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --covariates atac_pool ancestry sample_id sex
-  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --workers 48
-  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --workers 48
+  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
+  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
 done
 tmux attach-session -t brainage
 
@@ -90,8 +90,8 @@ tmux attach-session -t brainage
 for CELLTYPE in "${CELLTYPES[@]}"; do
   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto
   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex n_genes_by_counts
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex n_genes_by_counts
 done
 
 # combine the cNMF latent regression output and compute FDRs
