@@ -401,6 +401,12 @@ def main():
             f"Found {len(metrics_cols_cat)} categorical metrics: {metrics_cols_cat}"
         )
 
+        # Drop overlapping columns from metrics_df to avoid join errors
+        overlapping_cols = metrics_df.columns.intersection(features_df.columns)
+        if len(overlapping_cols) > 0:
+            logger.info(f"Dropping overlapping columns from metrics_df: {overlapping_cols.tolist()}")
+            metrics_df = metrics_df.drop(columns=overlapping_cols)
+
         # Merge metrics into features_df
         features_df = features_df.join(metrics_df, how="left")
 
