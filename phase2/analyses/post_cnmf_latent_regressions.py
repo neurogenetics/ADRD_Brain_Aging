@@ -29,11 +29,16 @@ def compute_fdr(pvalues):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run post-processing for cNMF latent factor linear mixed effects models."
+        description="Run post-processing for cNMF latent factor regressions."
     )
     parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
     parser.add_argument("--modality", type=str, default="rna", choices=["rna", "atac"])
+    parser.add_argument(
+        "--per-cell",
+        action="store_true",
+        help="Process results from the single-cell MixedLM regressions. Default is to process pseudobulked WLS results.",
+    )
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
         "--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path."
@@ -43,12 +48,14 @@ def parse_args():
 
 def main():
     args = parse_args()
+    
+    regression_type = "lmm" if args.per_cell else "pb_wls"
 
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
     logs_dir = work_dir / "logs"
 
-    log_filename = f"{logs_dir}/post_cnmf_latent_regressions_{args.modality}.log"
+    log_filename = f"{logs_dir}/post_cnmf_latent_regressions_{args.modality}_{regression_type}.log"
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -58,25 +65,29 @@ def main():
     logger.info(f"Command line: {' '.join(sys.argv)}")
 
     cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
-    lmm_results_dir = cnmf_dir / "lmm_results"
+    
+    if args.per_cell:
+        results_target_dir = cnmf_dir / "lmm_results"
+    else:
+        results_target_dir = cnmf_dir / "wls_pb_results"
 
-    if not lmm_results_dir.exists():
-        logger.error(f"Results directory does not exist: {lmm_results_dir}")
+    if not results_target_dir.exists():
+        logger.error(f"Results directory does not exist: {results_target_dir}")
         sys.exit(1)
 
-    logger.info(f"Searching for {args.modality} lmm results in {lmm_results_dir}")
+    logger.info(f"Searching for {args.modality} {regression_type} results in {results_target_dir}")
 
-    # File pattern: {project}_{safe_ct}_{modality}_lmm.csv
-    pattern = f"{args.project}_*_{args.modality}_lmm.csv"
-    file_paths = list(lmm_results_dir.glob(pattern))
+    # File pattern: {project}_{safe_ct}_{modality}_{regression_type}.csv
+    pattern = f"{args.project}_*_{args.modality}_{regression_type}.csv"
+    file_paths = list(results_target_dir.glob(pattern))
 
     if not file_paths:
-        logger.error(f"No files matching pattern {pattern} found in {lmm_results_dir}")
+        logger.error(f"No files matching pattern {pattern} found in {results_target_dir}")
         sys.exit(1)
 
     combined_data = []
     prefix = f"{args.project}_"
-    suffix = f"_{args.modality}_lmm.csv"
+    suffix = f"_{args.modality}_{regression_type}.csv"
 
     for fp in file_paths:
         try:
@@ -129,12 +140,12 @@ def main():
         f"Found {total_sig} significant factors across all cell types (FDR_age <= 0.05)"
     )
 
-    out_file = lmm_results_dir / f"{args.project}_combined_{args.modality}_lmm_fdr.csv"
+    out_file = results_target_dir / f"{args.project}_combined_{args.modality}_{regression_type}_fdr.csv"
     results_df.to_csv(out_file, index=False)
     logger.info(f"Saved combined FDR results to {out_file}")
 
     sig_out_file = (
-        lmm_results_dir / f"{args.project}_combined_{args.modality}_lmm_fdr_filtered.csv"
+        results_target_dir / f"{args.project}_combined_{args.modality}_{regression_type}_fdr_filtered.csv"
     )
     sig_results_df = results_df.loc[results_df["fdr_age"] <= 0.05].copy()
     sig_results_df.to_csv(sig_out_file, index=False)
@@ -281,7 +292,7 @@ def main():
                 
         if top_features_list:
             top_features_df = pd.DataFrame(top_features_list)
-            top_features_out = lmm_results_dir / f"{args.project}_combined_{args.modality}_lmm_top_features.csv"
+            top_features_out = results_target_dir / f"{args.project}_combined_{args.modality}_{regression_type}_top_features.csv"
             top_features_df.to_csv(top_features_out, index=False)
             logger.info(f"Saved extracted top features to {top_features_out}")
         else:

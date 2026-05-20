@@ -22,7 +22,7 @@ DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run a mixed effects linear regression model between age and cNMF latent factors."
+        description="Run a regression model (WLS Pseudobulk by default, or MixedLM per-cell) between age and cNMF latent factors."
     )
     parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
@@ -48,6 +48,11 @@ def parse_args():
         nargs="*",
         default=[],
         help="List of additional covariates to include in the regression formula.",
+    )
+    parser.add_argument(
+        "--per-cell",
+        action="store_true",
+        help="Run regression at the single-cell level using MixedLM. Default is to pseudobulk by sample_id and use WLS weighted by cell counts.",
     )
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
@@ -96,11 +101,14 @@ def main():
     work_dir = Path(args.work_dir)
     quants_dir = work_dir / "quants"
     results_dir = work_dir / "results"
+    info_dir = work_dir / "sample_info"
     logs_dir = work_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
+    
+    file_suffix = "lmm" if args.per_cell else "pb_wls"
 
     cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
 
@@ -119,7 +127,7 @@ def main():
             print("--k must be an integer or 'auto'")
             sys.exit(1)
 
-    log_filename = logs_dir / f"{args.project}_{args.modality}_{safe_ct}_lmm.log"
+    log_filename = logs_dir / f"{args.project}_{args.modality}_{safe_ct}_{file_suffix}.log"
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
@@ -154,7 +162,7 @@ def main():
         obs_df = adata.obs[
             (adata.obs.modality.isin(modality_list))
             & (adata.obs["cell_label"] == args.cell_type)
-        ]
+        ].copy()
     except Exception as e:
         logger.error(f"Failed to filter anndata observations: {e}")
         sys.exit(1)
@@ -167,12 +175,34 @@ def main():
 
     logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
 
+    # Load final covariates from info_dir for donor-level covariates
+    covars_file = info_dir / f"{args.project}.{safe_ct}.{args.modality}.final_covariates.csv"
+    if covars_file.exists():
+        logger.info(f"Loading donor-level covariates from {covars_file}...")
+        donor_covars = pd.read_csv(covars_file, index_col=0)
+        
+        # Merge the donor-level covariates into the obs_df based on 'sample_id'
+        # Reset index is used here because donor_covars index is sample_id
+        if "sample_id" in obs_df.columns:
+            obs_df = obs_df.merge(donor_covars, left_on="sample_id", right_index=True, how="left", suffixes=("", "_donor"))
+            
+            # If there was overlap in column names (like 'age'), prefer the newly loaded donor version
+            for c in donor_covars.columns:
+                if f"{c}_donor" in obs_df.columns:
+                    obs_df[c] = obs_df[f"{c}_donor"]
+                    obs_df.drop(columns=[f"{c}_donor"], inplace=True)
+        else:
+            logger.error("'sample_id' not found in anndata obs. Cannot merge donor covariates.")
+            sys.exit(1)
+    else:
+        logger.warning(f"Final covariates file not found: {covars_file}. Proceeding with only anndata metadata.")
+
     # Validate that all covariates exist in obs_df
     if args.covariates:
         missing_covariates = [c for c in args.covariates if c not in obs_df.columns]
         if missing_covariates:
             logger.error(
-                f"The following specified covariates were not found in the AnnData observations: {missing_covariates}"
+                f"The following specified covariates were not found in the combined metadata: {missing_covariates}"
             )
             sys.exit(1)
         logger.info(f"Including additional covariates: {args.covariates}")
@@ -212,12 +242,22 @@ def main():
         )
         sys.exit(1)
 
+    mode_str = "Linear Mixed Effects Model (MixedLM, per-cell)" if args.per_cell else "Weighted Least Squares Model (WLS, pseudobulked)"
     logger.info(
-        f"Running Linear Mixed Effects Model (MixedLM) for {len(df)} cells across {usage.shape[1]} latent factors."
+        f"Running {mode_str} for {len(df)} cells across {usage.shape[1]} latent factors."
     )
 
     base_formula = "latent_factor ~ age"
     formula_covariates = []
+
+    # Check for multicollinearity. 
+    # For pseudobulk, we must check it at the donor level, not the cell level!
+    meta_cols = [c for c in cols_to_keep if c != "sample_id"]
+    if not args.per_cell:
+        # Aggregate covariates to the donor level to correctly assess variance
+        test_df = df.groupby("sample_id")[meta_cols].first().dropna()
+    else:
+        test_df = df[meta_cols].dropna()
 
     if args.covariates:
         import patsy
@@ -227,9 +267,9 @@ def main():
 
         for c in candidates:
             # Check if the covariate has more than 1 unique value in this subset
-            if df[c].nunique(dropna=True) <= 1:
+            if test_df[c].nunique(dropna=True) <= 1:
                 logger.warning(
-                    f"Covariate '{c}' has only 1 unique value in this subset. Dropping."
+                    f"Covariate '{c}' has only 1 unique value in this subset at the testing level. Dropping."
                 )
             else:
                 formula_covariates.append(c)
@@ -239,8 +279,6 @@ def main():
             try:
                 # Build a dummy design matrix using the candidate covariates to check rank
                 test_formula = "age ~ " + " + ".join(formula_covariates)
-                # Drop rows with NAs in these specific columns just for the rank test
-                test_df = df[["age"] + formula_covariates].dropna()
                 if len(test_df) > 0:
                     y, X = patsy.dmatrices(
                         test_formula, test_df, return_type="dataframe"
@@ -275,18 +313,19 @@ def main():
         if formula_covariates:
             base_formula += " + " + " + ".join(formula_covariates)
 
-    logger.info(f"Formula: {base_formula} + (1|sample_id)")
+    if args.per_cell:
+        logger.info(f"Formula: {base_formula} + (1|sample_id)")
+    else:
+        logger.info(f"Formula: {base_formula} (weights=cell_count)")
 
-    lmm_results = []
+    regression_results = []
     # Usage columns represent latent factors (typically numbers or string numbers like '1', '2')
     factor_cols = usage.columns.tolist()
 
     for factor in factor_cols:
-        logger.info(f"Fitting MixedLM for latent factor '{factor}'...")
+        logger.info(f"Fitting model for latent factor '{factor}'...")
 
-        # Prepare dataframe for this factor (rename column to avoid formula issues with numeric column names)
-        # Using a temporary column name 'latent_factor'
-        formula_df = df[[factor] + cols_to_keep].copy()
+        formula_df = df[[factor, "sample_id"] + meta_cols].copy()
         formula_df.rename(columns={factor: "latent_factor"}, inplace=True)
 
         try:
@@ -294,17 +333,35 @@ def main():
             formula_df["sample_id"] = formula_df["sample_id"].astype(str)
             formula_df = formula_df.dropna()
 
-            # Fit the model
-            md = smf.mixedlm(base_formula, formula_df, groups="sample_id")
-            mdf = md.fit()
+            if not args.per_cell:
+                # PSEUDOBULK (WLS)
+                agg_dict = {"latent_factor": "mean"}
+                for c in meta_cols:
+                    agg_dict[c] = "first"
+                    
+                pb_df = formula_df.groupby("sample_id").agg(agg_dict)
+                pb_df["cell_count"] = formula_df.groupby("sample_id").size()
+                
+                md = smf.wls(base_formula, pb_df, weights=pb_df["cell_count"])
+                mdf = md.fit()
+                
+                # OLS/WLS inherently converges if fit() completes
+                converged = True
+                summary_str = mdf.summary()
+                
+            else:
+                # PER-CELL (MixedLM)
+                md = smf.mixedlm(base_formula, formula_df, groups="sample_id")
+                mdf = md.fit()
+                converged = mdf.converged
+                summary_str = mdf.summary()
 
             # Extract statistics for 'age'
             age_coef = mdf.params.get("age", np.nan)
             age_pval = mdf.pvalues.get("age", np.nan)
             age_se = mdf.bse.get("age", np.nan)
-            converged = mdf.converged
 
-            lmm_results.append(
+            regression_results.append(
                 {
                     "factor": factor,
                     "k": selected_k,
@@ -314,14 +371,14 @@ def main():
                     "converged": converged,
                 }
             )
-            logger.info(f"MixedLM summary for {factor}: {mdf.summary()}")
+            logger.info(f"Model summary for {factor}:\n{summary_str}")
             logger.info(
                 f"Factor {factor}: coef_age={age_coef:.4f}, pval_age={age_pval:.4e}, converged={converged}"
             )
 
         except Exception as e:
-            logger.error(f"MixedLM failed for factor '{factor}': {e}")
-            lmm_results.append(
+            logger.error(f"Regression failed for factor '{factor}': {e}")
+            regression_results.append(
                 {
                     "factor": factor,
                     "k": selected_k,
@@ -332,16 +389,16 @@ def main():
                 }
             )
 
-    results_df = pd.DataFrame(lmm_results)
+    results_df = pd.DataFrame(regression_results)
 
     # Save results
-    out_dir = cnmf_dir / "lmm_results"
+    out_dir = cnmf_dir / ("lmm_results" if args.per_cell else "wls_pb_results")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_lmm.csv"
+    out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_{file_suffix}.csv"
     results_df.to_csv(out_file, index=False)
 
     logger.info(
-        f"Linear Mixed Effects Model analysis complete. Results saved to:\n  {out_file}"
+        f"Regression analysis complete. Results saved to:\n  {out_file}"
     )
 
 

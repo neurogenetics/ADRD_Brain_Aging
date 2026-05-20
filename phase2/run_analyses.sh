@@ -97,10 +97,19 @@ for CELLTYPE in "${CELLTYPES[@]}"; do
 done
 tmux attach-session -t brainage
 
+# development test/comparison
+uv run phase2/development/analyses/latent_generation.py --cell-type "ExN SEMA3E" --modality rna
+
 # review cNMF stability figures and run latent based analysis using the determined K
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex
-  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
+  uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
+  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates gex_pool ancestry sex
   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates atac_pool ancestry sex
 done
