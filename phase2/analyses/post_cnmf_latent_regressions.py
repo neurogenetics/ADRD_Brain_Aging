@@ -151,6 +151,21 @@ def main():
     sig_results_df.to_csv(sig_out_file, index=False)
     logger.info(f"Saved significant combined FDR results to {sig_out_file}")
 
+    # Load WLS results for volcano plots
+    wls_full_path = results_dir / f"aging_phase2.all_celltypes.{args.modality}.wls.age.csv"
+    wls_sig_path = results_dir / f"aging_phase2.{args.modality}.all_celltypes.wls_fdr_filtered.age.csv"
+    wls_full_df = None
+    wls_sig_df = None
+    if wls_full_path.exists() and wls_sig_path.exists():
+        try:
+            wls_full_df = pd.read_csv(wls_full_path)
+            wls_sig_df = pd.read_csv(wls_sig_path)
+            logger.info("Successfully loaded WLS results for volcano plots.")
+        except Exception as e:
+            logger.error(f"Failed to read WLS results: {e}")
+    else:
+        logger.warning(f"WLS result files not found at {wls_full_path} or {wls_sig_path}. Volcano plots will be skipped.")
+
     # Extract top features for significant factors
     if total_sig > 0:
         logger.info("Extracting top features using the elbow method for significant factors...")
@@ -286,6 +301,64 @@ def main():
                 fig.savefig(f"{base_fig_path}.svg", bbox_inches='tight')
                 plt.close(fig)
                 logger.debug(f"Saved visualization to {base_fig_path}.png/.svg")
+                
+                # Volcano plot for top features based on WLS per-feature regression
+                if wls_full_df is not None and wls_sig_df is not None:
+                    ct_wls_full = wls_full_df[wls_full_df["tissue"] == ct]
+                    ct_wls_sig = wls_sig_df[wls_sig_df["tissue"] == ct]
+                    
+                    if not ct_wls_full.empty:
+                        top_feature_names = top_features.index.tolist()
+                        plot_data = ct_wls_full[ct_wls_full["feature"].isin(top_feature_names)].copy()
+                        
+                        if not plot_data.empty:
+                            sig_feature_names = ct_wls_sig["feature"].tolist()
+                            plot_data["-log10(p-value)"] = -np.log10(plot_data["p-value"].fillna(1.0).clip(lower=1e-300))
+                            
+                            fig_volc, ax_volc = plt.subplots(figsize=(8, 6))
+                            sig_plot_data = plot_data[plot_data["feature"].isin(sig_feature_names)]
+                            non_sig_plot_data = plot_data[~plot_data["feature"].isin(sig_feature_names)]
+                            
+                            if not non_sig_plot_data.empty:
+                                ax_volc.scatter(non_sig_plot_data["percentchange"], non_sig_plot_data["-log10(p-value)"], color='gray', alpha=0.7, label='Not Significant')
+                            if not sig_plot_data.empty:
+                                ax_volc.scatter(sig_plot_data["percentchange"], sig_plot_data["-log10(p-value)"], color='red', alpha=0.8, label='Significant (WLS)')
+                            
+                            texts_volc = []
+                            top_to_label = plot_data.sort_values("p-value").head(15)
+                            for _, row_volc in top_to_label.iterrows():
+                                texts_volc.append(
+                                    ax_volc.text(
+                                        row_volc["percentchange"], 
+                                        row_volc["-log10(p-value)"], 
+                                        row_volc["feature"], 
+                                        fontsize=8,
+                                        color='black'
+                                    )
+                                )
+                            
+                            if texts_volc:
+                                try:
+                                    adjust_text(texts_volc, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))
+                                except Exception as e:
+                                    logger.warning(f"adjust_text failed for volcano: {e}")
+                            
+                            ax_volc.set_title(f"WLS Results for cNMF Top Features\nCell Type: {ct} | Modality: {args.modality.upper()} | K: {k} | Factor: {factor}")
+                            ax_volc.set_xlabel("Percent Change")
+                            ax_volc.set_ylabel("-log10(p-value)")
+                            ax_volc.legend()
+                            ax_volc.axhline(y=-np.log10(0.05), color='black', linestyle='--', alpha=0.3)
+                            ax_volc.axvline(x=0, color='black', linestyle='-', alpha=0.3)
+                            
+                            base_volc_path = figs_dir / f"{args.project}_{ct}_{args.modality}_k{k}_factor{factor}_wls_volcano"
+                            fig_volc.savefig(f"{base_volc_path}.png", bbox_inches='tight', dpi=300)
+                            fig_volc.savefig(f"{base_volc_path}.svg", bbox_inches='tight')
+                            plt.close(fig_volc)
+                            logger.debug(f"Saved volcano visualization to {base_volc_path}.png/.svg")
+                        else:
+                            logger.warning(f"No WLS data matched top features for {ct} K={k} Factor={factor}")
+                    else:
+                        logger.warning(f"No WLS data found for cell type {ct}")
                 
             except Exception as e:
                 logger.error(f"Failed to generate visualization for {ct} K={k} Factor={factor}: {e}")
