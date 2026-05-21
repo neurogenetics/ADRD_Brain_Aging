@@ -119,3 +119,6 @@ uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna
 uv run phase2/analyses/post_cnmf_latent_regressions.py --modality atac
 # uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna --cnmf-dir-name cnmf_aaf
 # uv run phase2/analyses/post_cnmf_latent_regressions.py --modality atac --cnmf-dir-name cnmf_aaf
+
+# compare the age association latent factor with others across cell-types and modalities
+uv run phase2/analyses/compare_age_latent_factors.py
