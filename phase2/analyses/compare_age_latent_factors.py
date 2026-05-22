@@ -156,6 +156,7 @@ def main():
     # Key: {cell_type}_{modality}_K{k}_F{factor}
     factor_usages = {}
     factor_fdr_age = {}
+    factor_spectra = {"rna": {}, "atac": {}}
 
     # Group by cell_type and modality to minimize loading cNMF objects
     grouped_factors = sig_factors.groupby(["cell_type", "modality", "k"])
@@ -167,9 +168,11 @@ def main():
 
         cnmf_obj = cNMF(output_dir=str(cnmf_dir), name=run_name)
         try:
-            usage, *_ = cnmf_obj.load_results(
+            cnmf_res = cnmf_obj.load_results(
                 K=k, density_threshold=args.density_threshold
             )
+            usage = cnmf_res[0]
+            spectra = cnmf_res[1]
         except Exception as e:
             logger.error(
                 f"Failed to load cNMF results for {run_name} K={k}. Error: {e}"
@@ -217,21 +220,36 @@ def main():
 
         for factor_idx in group["factor"].values:
             factor_str = str(factor_idx)
+            factor_int = int(factor_idx)
             fdr_age_val = group[group["factor"] == factor_idx].iloc[0].get("fdr_age", 1.0)
+            
+            # Extract usage and spectra based on string index match
             if factor_str in agg_usage.columns:
                 col_name = f"{ct}|{mod.upper()}|K{k}|F{factor_str}"
                 factor_usages[col_name] = agg_usage[factor_str]
                 factor_fdr_age[col_name] = fdr_age_val
+                
+                # Spectra handling
+                if factor_str in spectra.columns:
+                    factor_spectra[mod][col_name] = spectra[factor_str]
+                elif factor_int in spectra.columns:
+                    factor_spectra[mod][col_name] = spectra[factor_int]
+            
+            # Extract usage and spectra based on integer index match
+            elif factor_int in agg_usage.columns:
+                col_name = f"{ct}|{mod.upper()}|K{k}|F{factor_idx}"
+                factor_usages[col_name] = agg_usage[factor_int]
+                factor_fdr_age[col_name] = fdr_age_val
+                
+                # Spectra handling
+                if factor_int in spectra.columns:
+                    factor_spectra[mod][col_name] = spectra[factor_int]
+                elif factor_str in spectra.columns:
+                    factor_spectra[mod][col_name] = spectra[factor_str]
             else:
-                # sometimes columns are integers
-                if int(factor_idx) in agg_usage.columns:
-                    col_name = f"{ct}|{mod.upper()}|K{k}|F{factor_idx}"
-                    factor_usages[col_name] = agg_usage[int(factor_idx)]
-                    factor_fdr_age[col_name] = fdr_age_val
-                else:
-                    logger.warning(
-                        f"Factor {factor_idx} not found in usage columns for {run_name} K={k}"
-                    )
+                logger.warning(
+                    f"Factor {factor_idx} not found in usage columns for {run_name} K={k}"
+                )
 
     if not factor_usages:
         logger.error("No usage data could be extracted for any significant factors.")
@@ -372,6 +390,64 @@ def main():
     except Exception as e:
         logger.error(f"Failed to generate clustermap: {e}")
 
+    # Generate within-modality spectra correlation heatmaps
+    logger.info("Generating within-modality spectra correlation heatmaps...")
+    for mod in ["rna", "atac"]:
+        if not factor_spectra[mod]:
+            logger.info(f"No spectra extracted for {mod.upper()}, skipping spectra correlation.")
+            continue
+            
+        logger.info(f"Processing {mod.upper()} spectra correlation...")
+        spectra_df = pd.DataFrame(factor_spectra[mod]).fillna(0)
+        spectra_corr = spectra_df.corr(method=args.corr_method)
+        
+        spectra_corr_out = results_dir / "latents" / "cnmf" / f"{args.project}_age_factors_spectra_correlation_{mod}_{file_suffix}.csv"
+        spectra_corr.to_csv(spectra_corr_out)
+        
+        mod_color = modality_colors[mod.upper()]
+        spec_colors = [mod_color] * len(spectra_corr.columns)
+        
+        try:
+            n_factors_mod = spectra_corr.shape[0]
+            fig_size_mod = max(8, n_factors_mod * 0.3)
+            
+            g_spec = sns.clustermap(
+                spectra_corr, 
+                cmap="RdBu_r", 
+                vmin=-1, 
+                vmax=1,
+                center=0,
+                figsize=(fig_size_mod, fig_size_mod),
+                xticklabels=True,
+                yticklabels=True,
+                col_colors=spec_colors,
+                row_colors=spec_colors,
+                linewidths=0.5,
+                cbar_kws={"label": f"{args.corr_method.capitalize()} Correlation"}
+            )
+            
+            g_spec.ax_heatmap.set_xticklabels(g_spec.ax_heatmap.get_xmajorticklabels(), fontsize=8, rotation=90)
+            g_spec.ax_heatmap.set_yticklabels(g_spec.ax_heatmap.get_ymajorticklabels(), fontsize=8, rotation=0)
+            
+            for tick in g_spec.ax_heatmap.get_xticklabels():
+                col_name = tick.get_text()
+                if factor_fdr_age.get(col_name, 1.0) <= args.fdr_threshold:
+                    x = tick.get_position()[0]
+                    g_spec.ax_col_colors.text(x, 0.5, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8)
+
+            for tick in g_spec.ax_heatmap.get_yticklabels():
+                row_name = tick.get_text()
+                if factor_fdr_age.get(row_name, 1.0) <= args.fdr_threshold:
+                    y = tick.get_position()[1]
+                    g_spec.ax_row_colors.text(0.5, y, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8, rotation=90)
+                    
+            heatmap_out_png = figs_dir / f"{args.project}_age_factors_spectra_clustermap_{mod}_{file_suffix}.png"
+            heatmap_out_svg = figs_dir / f"{args.project}_age_factors_spectra_clustermap_{mod}_{file_suffix}.svg"
+            g_spec.savefig(heatmap_out_png, dpi=300, bbox_inches="tight")
+            g_spec.savefig(heatmap_out_svg, bbox_inches="tight")
+            logger.info(f"Saved {mod.upper()} spectra clustermap to {heatmap_out_png}")
+        except Exception as e:
+            logger.error(f"Failed to generate spectra clustermap for {mod}: {e}")
 
 if __name__ == "__main__":
     main()
