@@ -155,6 +155,7 @@ def main():
     # Dictionary to store usage dataframes for each significant factor
     # Key: {cell_type}_{modality}_K{k}_F{factor}
     factor_usages = {}
+    factor_fdr_age = {}
 
     # Group by cell_type and modality to minimize loading cNMF objects
     grouped_factors = sig_factors.groupby(["cell_type", "modality", "k"])
@@ -216,14 +217,17 @@ def main():
 
         for factor_idx in group["factor"].values:
             factor_str = str(factor_idx)
+            fdr_age_val = group[group["factor"] == factor_idx].iloc[0].get("fdr_age", 1.0)
             if factor_str in agg_usage.columns:
                 col_name = f"{ct}|{mod.upper()}|K{k}|F{factor_str}"
                 factor_usages[col_name] = agg_usage[factor_str]
+                factor_fdr_age[col_name] = fdr_age_val
             else:
                 # sometimes columns are integers
                 if int(factor_idx) in agg_usage.columns:
                     col_name = f"{ct}|{mod.upper()}|K{k}|F{factor_idx}"
                     factor_usages[col_name] = agg_usage[int(factor_idx)]
+                    factor_fdr_age[col_name] = fdr_age_val
                 else:
                     logger.warning(
                         f"Factor {factor_idx} not found in usage columns for {run_name} K={k}"
@@ -340,6 +344,19 @@ def main():
         g.ax_heatmap.set_yticklabels(
             g.ax_heatmap.get_ymajorticklabels(), fontsize=8, rotation=0
         )
+
+        # Annotate significant factors on the color bands
+        for tick in g.ax_heatmap.get_xticklabels():
+            col_name = tick.get_text()
+            if factor_fdr_age.get(col_name, 1.0) <= args.fdr_threshold:
+                x = tick.get_position()[0]
+                g.ax_col_colors.text(x, 0.5, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8)
+
+        for tick in g.ax_heatmap.get_yticklabels():
+            row_name = tick.get_text()
+            if factor_fdr_age.get(row_name, 1.0) <= args.fdr_threshold:
+                y = tick.get_position()[1]
+                g.ax_row_colors.text(0.5, y, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8, rotation=90)
 
         heatmap_out_png = (
             figs_dir / f"{args.project}_age_factors_clustermap_{file_suffix}.png"
