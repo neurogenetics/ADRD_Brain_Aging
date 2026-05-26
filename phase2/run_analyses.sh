@@ -22,6 +22,9 @@ for MODALITY in ${MODALITIES[@]}; do
   phase2/run_prep_pb_jobs.sh run_variance_partition.py ${MODALITY}
 done
 
+# since using WLS check cell-types and modalities for correlations between cell counts and age
+uv run phase2/analysis/cell_counts_regression.py
+
 # run the age regression analysis per cell-type
 REGRESSTYPES="wls vwrlm ols rlm"
 for MODALITY in ${MODALITIES[@]}; do
