@@ -5,6 +5,8 @@ import sys
 
 import pandas as pd
 import torch
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Set PYTORCH_CUDA_ALLOC_CONF programmatically before anything is allocated
 import os
@@ -81,14 +83,62 @@ def save_full_walk_results(probs: torch.Tensor, feature_names: list, key_feature
     key_df.to_csv(key_out_file, index=False)
     logger.info(f"Saved key feature subset ({len(key_df)} features) to {key_out_file}")
 
+def generate_probability_scatter_plot(c_probs: torch.Tensor, q_probs: torch.Tensor, feature_names: list, classical_keys: list, quantum_keys: list, out_file: Path, title: str):
+    """Generates a scatter plot comparing Classical vs Quantum probabilities for all features."""
+    c_probs_np = c_probs.cpu().numpy()
+    q_probs_np = q_probs.cpu().numpy()
+    
+    df = pd.DataFrame({
+        "feature": feature_names,
+        "Classical Probability": c_probs_np,
+        "Quantum Probability": q_probs_np
+    })
+    
+    c_set = set(classical_keys)
+    q_set = set(quantum_keys)
+    
+    def get_category(feature):
+        if feature in c_set and feature in q_set:
+            return "Shared"
+        elif feature in c_set:
+            return "Classical Specific"
+        elif feature in q_set:
+            return "Quantum Specific"
+        return "Background"
+    
+    df["Category"] = df["feature"].apply(get_category)
+    
+    plt.figure(figsize=(10, 8))
+    sns.scatterplot(
+        data=df, 
+        x="Classical Probability", 
+        y="Quantum Probability", 
+        hue="Category",
+        palette={"Classical Specific": "red", "Quantum Specific": "blue", "Shared": "purple", "Background": "lightgrey"},
+        alpha=0.6,
+        s=20
+    )
+    
+    # Draw y=x diagonal
+    max_val = max(df["Classical Probability"].max(), df["Quantum Probability"].max())
+    plt.plot([0, max_val], [0, max_val], color='black', linestyle='--', alpha=0.5)
+    
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(out_file, dpi=300)
+    plt.close()
+    logger.info(f"Saved Probability Scatter Plot to {out_file}")
+
 def main():
     args = parse_args()
     
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
     info_dir = work_dir / "sample_info"
+    figs_dir = work_dir / "figures"
     logs_dir = work_dir / "logs"
     
+    figs_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     
@@ -218,6 +268,11 @@ def main():
     out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_qml_comparison.csv"
     comp_df.to_csv(out_file, index=False)
     logger.info(f"Saved QML comparison results to {out_file}")
+    
+    # 7. Generate Scatter Plot
+    scatter_out = figs_dir / f"{args.project}_{safe_ct}_{args.modality}_qml_scatter.png"
+    title = f"Quantum vs Classical Walk Probabilities\n{args.cell_type} ({args.modality.upper()})"
+    generate_probability_scatter_plot(classical_probs, quantum_probs, feature_names, classical_features, quantum_features, scatter_out, title)
 
 if __name__ == "__main__":
     main()
