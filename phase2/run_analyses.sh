@@ -125,3 +125,19 @@ uv run phase2/analyses/post_cnmf_latent_regressions.py --modality atac
 
 # compare the age association latent factor with others across cell-types and modalities
 uv run phase2/analyses/compare_age_latent_factors.py
+
+# network analyses using both Quantum walk and random walk
+for CELLTYPE in "${CELLTYPES[@]}"; do
+  for MODALITY in ${MODALITIES[@]}; do
+    uv run phase2/analyses/run_qml_pipeline.py --cell-type "$CELLTYPE" --modality "$MODALITY" --epochs 100
+  done
+done
+
+# network analysis comparisons across cell-types
+
+# network analysis visualizations
+for CELLTYPE in "${CELLTYPES[@]}"; do
+  for MODALITY in ${MODALITIES[@]}; do
+    uv run phase2/figures/export_walk_topologies.py --cell-type "$CELLTYPE" --modality "$MODALITY"
+  done
+done
