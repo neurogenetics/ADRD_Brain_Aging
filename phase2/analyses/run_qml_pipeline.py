@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs.")
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument("--max-nodes", type=int, default=16384, help="Maximum number of features to process to prevent OOM errors (VRAM protection).")
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -197,6 +198,17 @@ def main():
     score_file = score_files[0]
     logger.info(f"Loading cNMF spectra scores from: {score_file}")
     h_df = pd.read_csv(score_file, sep='\t', index_col=0)
+    
+    # 2.5 VRAM Protection: Dynamic Dimensionality Reduction
+    if h_df.shape[1] > args.max_nodes:
+        logger.warning(f"Feature count ({h_df.shape[1]}) exceeds safety limit ({args.max_nodes}). Downsampling to protect VRAM...")
+        # Calculate variance for each feature across the K latent factors
+        feature_variances = h_df.var(axis=0)
+        # Select the top N features with the highest variance
+        top_features = feature_variances.nlargest(args.max_nodes).index
+        # Subset the H matrix
+        h_df = h_df[top_features]
+        logger.info(f"Dynamically downsampled to the {args.max_nodes} most variable features.")
     
     # H matrix shape is (factors, features)
     feature_names = h_df.columns.tolist()

@@ -128,10 +128,13 @@ uv run phase2/analyses/compare_age_latent_factors.py
 
 # network analyses using both Quantum walk and random walk
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  for MODALITY in ${MODALITIES[@]}; do
-    uv run phase2/analyses/run_qml_pipeline.py --cell-type "$CELLTYPE" --modality "$MODALITY" --epochs 100
-  done
+  uv run phase2/analyses/run_qml_pipeline.py --cell-type "$CELLTYPE" --modality rna --epochs 100
 done
+# for CELLTYPE in "${CELLTYPES[@]}"; do
+#   for MODALITY in ${MODALITIES[@]}; do
+#     uv run phase2/analyses/run_qml_pipeline.py --cell-type "$CELLTYPE" --modality "$MODALITY" --epochs 100
+#   done
+# done
 
 # network analysis comparisons across cell-types
 
