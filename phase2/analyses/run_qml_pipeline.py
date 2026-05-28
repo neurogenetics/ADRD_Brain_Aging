@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 # Set PYTORCH_CUDA_ALLOC_CONF programmatically before anything is allocated
 import os
@@ -38,6 +39,7 @@ def parse_args():
     parser.add_argument("--cnmf-dir-name", type=str, default="cnmf", help="Name of the cnmf output directory within the latents path.")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs.")
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -131,6 +133,16 @@ def generate_probability_scatter_plot(c_probs: torch.Tensor, q_probs: torch.Tens
 
 def main():
     args = parse_args()
+    
+    import random
+    seed = args.seed
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
