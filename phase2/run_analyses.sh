@@ -137,10 +137,14 @@ done
 # done
 
 # network analysis comparisons across cell-types
+uv run phase2/analyses/summarize_qml_results.py --help
 
 # network analysis visualizations
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  for MODALITY in ${MODALITIES[@]}; do
-    uv run phase2/figures/export_walk_topologies.py --cell-type "$CELLTYPE" --modality "$MODALITY"
-  done
+  uv run phase2/figures/export_walk_topologies.py --cell-type "$CELLTYPE" --modality rna
 done
+# for CELLTYPE in "${CELLTYPES[@]}"; do
+#   for MODALITY in ${MODALITIES[@]}; do
+#     uv run phase2/figures/export_walk_topologies.py --cell-type "$CELLTYPE" --modality "$MODALITY"
+#   done
+# done

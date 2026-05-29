@@ -56,14 +56,18 @@ def generate_upset_plot(features_dict, out_file, title):
         logger.warning(f"Not enough groups to generate UpSet plot for {title}")
         return
         
-    # upsetplot expects a dictionary where keys are group names and values are lists of items
-    upset_data = from_contents(features_dict)
-    
-    plt.figure(figsize=(12, 8))
-    upset_plot(upset_data, sort_by='cardinality')
-    plt.title(title)
-    plt.savefig(out_file, dpi=300)
-    plt.close()
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        # upsetplot expects a dictionary where keys are group names and values are lists of items
+        upset_data = from_contents(features_dict)
+        
+        plt.figure(figsize=(12, 8))
+        upset_plot(upset_data, sort_by='cardinality')
+        plt.title(title)
+        plt.savefig(out_file, dpi=300)
+        plt.close()
+        
     logger.info(f"Saved UpSet plot to {out_file}")
 
 def find_multiomic_pairs(rna_dict, atac_dict, features_df, max_dist, out_file):
