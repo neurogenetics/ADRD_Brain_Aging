@@ -71,6 +71,7 @@ uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /m
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.TF.csv --name Encode4_TF
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-H3K4me3.csv --name Encode4_CA-H3K4me34
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Promoter.csv --name Encode4_Promoter
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation.csv --name clocksites
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene, using rna covariates
 uv run phase2/analyses/cis_correlation.py --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3
