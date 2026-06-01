@@ -307,6 +307,20 @@ def main():
     annot_matrix[fdr_matrix <= args.fdr_threshold] = "*"
     np.fill_diagonal(annot_matrix.values, "")
 
+    # Create pairwise summary table
+    pairwise_results = []
+    for i in range(len(upper_tri_indices[0])):
+        row_idx = upper_tri_indices[0][i]
+        col_idx = upper_tri_indices[1][i]
+        pairwise_results.append({
+            "factor1": cols[row_idx],
+            "factor2": cols[col_idx],
+            "correlation": corr_matrix.iloc[row_idx, col_idx],
+            "p_value": pval_matrix.iloc[row_idx, col_idx],
+            "fdr": fdr_upper[i]
+        })
+    pairwise_df = pd.DataFrame(pairwise_results)
+
     # Save correlation matrix
     corr_out = (
         results_dir
@@ -324,7 +338,17 @@ def main():
         / f"{args.project}_age_factors_fdr_{file_suffix}.csv"
     )
     fdr_matrix.to_csv(fdr_out)
-    logger.info(f"Saved correlation and FDR matrices to {corr_out.parent}")
+
+    # Save pairwise FDR table
+    fdr_table_out = (
+        results_dir
+        / "latents"
+        / "cnmf"
+        / f"{args.project}_age_factors_pairwise_fdr_table_{file_suffix}.csv"
+    )
+    pairwise_df.to_csv(fdr_table_out, index=False)
+
+    logger.info(f"Saved correlation, FDR matrices, and pairwise table to {corr_out.parent}")
 
     # Generate clustered heatmap
     logger.info("Generating clustered heatmap...")
