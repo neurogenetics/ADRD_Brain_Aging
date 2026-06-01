@@ -411,6 +411,65 @@ def main():
         g.savefig(heatmap_out_svg, bbox_inches="tight")
         logger.info(f"Saved clustered heatmap to {heatmap_out_png}")
 
+        # Generate narrower heatmap containing only factors with at least 1 significant correlation
+        # Exclude the diagonal which is 1.0; off-diagonal elements in fdr_matrix represent the actual comparisons
+        sig_mask = (fdr_matrix <= args.fdr_threshold).any(axis=0)
+        sig_factors_cols = fdr_matrix.columns[sig_mask]
+
+        if len(sig_factors_cols) > 1:
+            logger.info(f"Generating narrower clustered heatmap with {len(sig_factors_cols)} factors...")
+            narrow_corr = corr_matrix.loc[sig_factors_cols, sig_factors_cols]
+            narrow_annot = annot_matrix.loc[sig_factors_cols, sig_factors_cols]
+            narrow_colors = [modality_colors[col.split("|")[1]] for col in sig_factors_cols]
+
+            n_factors_narrow = narrow_corr.shape[0]
+            fig_size_narrow = max(8, n_factors_narrow * 0.3)
+
+            g_narrow = sns.clustermap(
+                narrow_corr,
+                cmap="RdBu_r",
+                vmin=-1,
+                vmax=1,
+                center=0,
+                figsize=(fig_size_narrow, fig_size_narrow),
+                xticklabels=True,
+                yticklabels=True,
+                col_colors=narrow_colors,
+                row_colors=narrow_colors,
+                linewidths=0.5,
+                cbar_kws={"label": f"{args.corr_method.capitalize()} Correlation"},
+                annot=narrow_annot,
+                fmt="",
+                annot_kws={"color": "black"},
+            )
+
+            g_narrow.ax_heatmap.set_xticklabels(
+                g_narrow.ax_heatmap.get_xmajorticklabels(), fontsize=8, rotation=90
+            )
+            g_narrow.ax_heatmap.set_yticklabels(
+                g_narrow.ax_heatmap.get_ymajorticklabels(), fontsize=8, rotation=0
+            )
+
+            for tick in g_narrow.ax_heatmap.get_xticklabels():
+                col_name = tick.get_text()
+                if factor_fdr_age.get(col_name, 1.0) <= args.fdr_threshold:
+                    x = tick.get_position()[0]
+                    g_narrow.ax_col_colors.text(x, 0.5, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8)
+
+            for tick in g_narrow.ax_heatmap.get_yticklabels():
+                row_name = tick.get_text()
+                if factor_fdr_age.get(row_name, 1.0) <= args.fdr_threshold:
+                    y = tick.get_position()[1]
+                    g_narrow.ax_row_colors.text(0.5, y, '+', ha='center', va='center', color='white', fontweight='bold', fontsize=8, rotation=90)
+
+            narrow_heatmap_out_png = figs_dir / f"{args.project}_age_factors_clustermap_narrow_{file_suffix}.png"
+            narrow_heatmap_out_svg = figs_dir / f"{args.project}_age_factors_clustermap_narrow_{file_suffix}.svg"
+            g_narrow.savefig(narrow_heatmap_out_png, dpi=300, bbox_inches="tight")
+            g_narrow.savefig(narrow_heatmap_out_svg, bbox_inches="tight")
+            logger.info(f"Saved narrower clustered heatmap to {narrow_heatmap_out_png}")
+        else:
+            logger.info("Not enough factors with significant correlations to generate a narrower heatmap.")
+
     except Exception as e:
         logger.error(f"Failed to generate clustermap: {e}")
 
