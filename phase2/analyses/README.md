@@ -65,7 +65,26 @@
        * Outputs full results and an FDR-filtered list (significantly conditioned pairs) into the `results` directory.
        * Logs the total pairs tested, nominally significant pairs, and the final FDR-significant count.
 
-6. Feature Enrichment and Permutation Testing (feature_enrichment.py)
+6. Regression Power Analysis (regression_power_analysis.py)
+   * Objective: To dynamically assess the statistical power of previous age-based weighted least squares (WLS) regressions, solve for empirical R-squared thresholds, and visualize the empirical distribution of variance explained across tested modalities (e.g., RNA vs ATAC).
+   * Data Loading & Alpha Discovery:
+       * Loads previously generated WLS regression results (comma-separated if analyzing multiple modalities).
+       * Filters for significant features (FDR <= 0.05) to dynamically compute the empirical alpha (max p-value of a significant result) specific to that dataset's multiple-testing correction stringency.
+   * Statistical Methodology (Power Modeling):
+       * Utilizes `statsmodels.stats.power.FTestPower` to model the theoretical power curves.
+       * Uses the empirical alpha, a target power (default 80%), and sample size (N) to solve for the minimal detectable effect size (f-squared).
+       * Converts the effect size to the minimum detectable Variance Explained (R-squared) threshold.
+   * Empirical Variance Analysis:
+       * Recalculates the exact empirical R-squared for every tested feature using the formula: `beta^2 / (beta^2 + (se^2 * (n - 2)))`.
+       * Ranks features by Variance Explained.
+       * Applies the power-derived R-squared threshold to determine exactly how many significant features exceed the minimum bound of statistical reliability.
+       * Calculates the proportion of significant features that pass this threshold for the dataset as a whole, as well as broken down per specific cell-type (`tissue`).
+   * Outputs & Visualizations:
+       * Logs comprehensive metrics to stdout and a unified log file (`regression_power_analysis.log`), including top/bottom features and threshold pass rates per cell-type.
+       * S-Curve Scatter Plot: Generates a rank-ordered scatter plot of empirical Variance Explained, highlighting significant features vs background and plotting the theoretical power threshold line.
+       * Power Curve Plot: Generates a final comparison line plot showing theoretical statistical power (y-axis) as a function of R-squared (x-axis) across all inputted datasets to visualize differences in detection sensitivity.
+
+7. Feature Enrichment and Permutation Testing (feature_enrichment.py)
    * Objective: To evaluate whether features (genes or chromatin peaks) significantly associated with age exhibit distinct structural, spatial, or evolutionary properties compared to the background pool of tested features within the same cell type.
    * Data Integration:
        * Defines the background pool for each cell type strictly as the set of all features evaluated during the primary age-regression modeling (WLS).
@@ -81,7 +100,7 @@
        * Spatial Distance Permutations: Utilizes `pybedtools.closest` to compute the absolute genomic distance (in base pairs) from each feature to the nearest landmark (e.g., telomeres or centromeres). Enrichment is then evaluated based on the average distance compared to the permuted null expectation.
    * Output: Results are compiled into a comprehensive CSV reporting the observed and expected values, empirical fold-change, and exact p-value for every metric tested across all defined cell types.
 
-7. Latent Factor Generation and Age Association Pipeline
+8. Latent Factor Generation and Age Association Pipeline
    * Objective: To discover coordinated networks of features (latent factors) within single-cell data using Consensus Non-negative Matrix Factorization (cNMF), and to subsequently evaluate these factors for significant associations with chronological age using linear mixed-effects modeling.
    * Latent Factor Generation (cnmf_latent_generation.py):
        * Data Preparation: Single-cell data is subset by cell type and filtered to retain only cells from valid donors and features used for age-associated regression analysis. Highly variable genes (HVGs) are pre-calculated to ensure stability during factorization.
