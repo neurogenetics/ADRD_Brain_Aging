@@ -54,6 +54,12 @@ done
 uv run phase2/analyses/feature_enrichment.py --modality rna --cell-type-specificity --name cell_specific
 uv run phase2/analyses/feature_enrichment.py --modality atac --cell-type-specificity --name cell_specific
 uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_gene_metrics.csv --name gene_metrics
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean.csv --name gene_aging_hallmarks
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean1.csv --name gene_aging_hallmarks_level1
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean2.csv --name gene_aging_hallmarks_level2
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean3.csv --name gene_aging_hallmarks_level3
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean4.csv --name gene_aging_hallmarks_level4
+uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean5.csv --name gene_aging_hallmarks_level5
 uv run phase2/analyses/feature_enrichment.py --modality atac --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/quants/aging_phase2_peak_attributes.csv --name peak_metrics
 uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
