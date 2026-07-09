@@ -171,14 +171,16 @@ def main():
         hue="tissue",
         legend=False,
     )
-    plt.xticks(rotation=90)
+    plt.xticks(rotation=90, fontsize=14, weight="bold")
+    plt.yticks(fontsize=14, weight="bold")
     plt.tight_layout()
     plt.title(
-        "% of age associated genes that are mediated by a cis correlated age associated ATAC peak",
-        fontsize="large",
+        "% of age associated genes that are attenuated by a cis correlated age associated ATAC peak",
+        fontsize=24,
+        weight="bold",
     )
-    plt.xlabel("Cell types")
-    plt.ylabel("%")
+    plt.xlabel("Cell types", fontsize=18, weight="bold")
+    plt.ylabel("Percentage", fontsize=18, weight="bold")
     plt.savefig(f"{fig_bar}.png", bbox_inches="tight")
     plt.savefig(f"{fig_bar}.svg", bbox_inches="tight")
     plt.close()

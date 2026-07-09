@@ -79,6 +79,13 @@ uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /m
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Promoter.csv --name Encode4_Promoter
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_TEs.csv --name TEs
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation.csv --name clocksites
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Horvath2013.csv --name clocksites_Horvath2013
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Shireby2020.csv --name clocksites_Shireby2020
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_BrainClock.csv --name clocksites_Tong2024_BrainClock
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-In.csv --name clocksites_Tong2024_Glia-In
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-Sin.csv --name clocksites_Tong2024_Glia-Sin
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-In.csv --name clocksites_Tong2024_Neu-In
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-Sin.csv --name clocksites_Tong2024_Neu-Sin
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene, using rna covariates
 uv run phase2/analyses/cis_correlation.py --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3
