@@ -56,6 +56,12 @@ def parse_args():
         help="Type of pseudobulk aggregatioin to use.",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
+    parser.add_argument(
+        "--exclude-ids",
+        type=str,
+        default="",
+        help="Comma separated list of sample IDs to exclude.",
+    )
     return parser.parse_args()
 
 
@@ -196,6 +202,14 @@ def main():
 
     # Load and Sync Data
     adata_raw, _ = load_and_prep_data(raw_file, annot_file, debug)
+
+    if args.exclude_ids:
+        exclude_ids = [x.strip() for x in args.exclude_ids.split(",")]
+        logger.info(f"Excluding sample IDs: {exclude_ids}")
+        if "sample_id" in adata_raw.obs:
+            adata_raw = adata_raw[~adata_raw.obs["sample_id"].isin(exclude_ids)].copy()
+        else:
+            logger.warning("sample_id not found in adata_raw.obs, skipping exclusion.")
 
     for modal_full, modal_short in VAR_MODAL_DICT.items():
         # subset for the modality

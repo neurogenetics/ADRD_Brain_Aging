@@ -4,10 +4,10 @@ echo "$(date): $(uname -n)"
 echo "Executing: $0 $@"
 
 # format the initial knowns covariates by modality
-uv run phase2/analysis/format_covariates.py
+uv run phase2/analyses/format_covariates.py --exclude-ids Aging134
 
 # pseudobulk convert the modalities and save per cell-type
-uv run phase2/analyses/pseudobulk_convert.py --aggregate-type sum
+uv run phase2/analyses/pseudobulk_convert.py --aggregate-type sum --exclude-ids Aging134
 
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 MODALITIES="rna atac"

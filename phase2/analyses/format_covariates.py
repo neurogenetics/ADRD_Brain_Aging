@@ -35,6 +35,12 @@ def parse_args():
         help="Base working directory.",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
+    parser.add_argument(
+        "--exclude-ids",
+        type=str,
+        default="",
+        help="Comma separated list of sample IDs to exclude.",
+    )
     return parser.parse_args()
 
 
@@ -70,6 +76,11 @@ def main():
     # load the annotated anndata
     adata = read_h5ad(anndata_file)
     peek_anndata(adata, f"loaded annotated anndata from {anndata_file}", debug)
+
+    if args.exclude_ids:
+        exclude_ids = [x.strip() for x in args.exclude_ids.split(",")]
+        logger.info(f"Excluding sample IDs: {exclude_ids}")
+        adata = adata[~adata.obs["sample_id"].isin(exclude_ids)]
 
     # format sample covariates: sex, ancestry, age, (gex_pool or atac_pool), pmi, ph, smoker, bmi
     keep_terms = [
