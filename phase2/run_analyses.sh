@@ -23,7 +23,7 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # since using WLS check cell-types and modalities for correlations between cell counts and age
-uv run phase2/analysis/cell_counts_regression.py
+uv run phase2/analyses/cell_counts_regression.py
 
 # run the age regression analysis per cell-type
 REGRESSTYPES="wls vwrlm ols rlm"
@@ -36,7 +36,7 @@ done
 # post process the age regressions
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
-    uv run phase2/analyses/post_pseudobulk_regression.py --modality ${MODALITY} --regression-type ${REGRESSTYPE} --no-volcano-per-celltype
+    uv run phase2/analyses/post_pseudobulk_regression.py --modality ${MODALITY} --regression-type ${REGRESSTYPE}
   done
 done
 
@@ -50,6 +50,12 @@ for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/celltype_age_effect_similarity.py --modality ${MODALITY}
 done
 
+# power analysis of this study
+# min sample sizes used per modality
+uv run phase2/analyses/regression_power_analysis.py --sizes 8,15
+# max sample sized used per modality
+uv run phase2/analyses/regression_power_analysis.py --sizes 35,34
+
 # compute enrichments for age associated features
 uv run phase2/analyses/feature_enrichment.py --modality rna --cell-type-specificity --name cell_specific
 uv run phase2/analyses/feature_enrichment.py --modality atac --cell-type-specificity --name cell_specific
@@ -61,31 +67,36 @@ uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/
 uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean4.csv --name gene_aging_hallmarks_level4
 uv run phase2/analyses/feature_enrichment.py --modality rna --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/Gene_hallmarks_clean5.csv --name gene_aging_hallmarks_level5
 uv run phase2/analyses/feature_enrichment.py --modality atac --metrics-file /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/quants/aging_phase2_peak_attributes.csv --name peak_metrics
-uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har
-uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_haqer.csv --name haqer
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_haqer.csv --name haqer
-uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_telomere.csv --distance --name telomere
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_telomere.csv --distance --name telomere
-uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_centromere.csv --distance --name centromere
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_centromere.csv --distance --name centromere
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Proximal_enhancer.csv --name Encode4_Proximal_enhancer
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-CTCF.csv --name Encode4_CA-CTCF
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-TF.csv --name Encode4_CA-TF
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA.csv --name Encode4_CA
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Distal_enhancer.csv --name Encode4_Distal_enhancer
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.TF.csv --name Encode4_TF
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-H3K4me3.csv --name Encode4_CA-H3K4me34
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Promoter.csv --name Encode4_Promoter
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_TEs.csv --name TEs
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation.csv --name clocksites
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Horvath2013.csv --name clocksites_Horvath2013
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Shireby2020.csv --name clocksites_Shireby2020
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_BrainClock.csv --name clocksites_Tong2024_BrainClock
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-In.csv --name clocksites_Tong2024_Glia-In
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-Sin.csv --name clocksites_Tong2024_Glia-Sin
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-In.csv --name clocksites_Tong2024_Neu-In
-uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-Sin.csv --name clocksites_Tong2024_Neu-Sin
+uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_har.csv --name har &
+uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_haqer.csv --name haqer &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_haqer.csv --name haqer &
+uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_telomere.csv --distance --name telomere &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_telomere.csv --distance --name telomere &
+uv run phase2/analyses/feature_enrichment.py --modality rna --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_centromere.csv --distance --name centromere &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_centromere.csv --distance --name centromere &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Proximal_enhancer.csv --name Encode4_Proximal_enhancer &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-CTCF.csv --name Encode4_CA-CTCF &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-TF.csv --name Encode4_CA-TF &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA.csv --name Encode4_CA &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Distal_enhancer.csv --name Encode4_Distal_enhancer &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.TF.csv --name Encode4_TF &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.CA-H3K4me3.csv --name Encode4_CA-H3K4me34 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_Encode4_cCRE.Promoter.csv --name Encode4_Promoter &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/ucsc/hg38_TEs.csv --name TEs &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation.csv --name clocksites &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Horvath2013.csv --name clocksites_Horvath2013 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Shireby2020.csv --name clocksites_Shireby2020 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_BrainClock.csv --name clocksites_Tong2024_BrainClock &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-In.csv --name clocksites_Tong2024_Glia-In &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-Sin.csv --name clocksites_Tong2024_Glia-Sin &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-In.csv --name clocksites_Tong2024_Neu-In &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-Sin.csv --name clocksites_Tong2024_Neu-Sin &
+
+# summarize the enrichment results and visualize
+uv run phase2/figures/summarize_metrics_enrichments.py
+uv run phase2/figures/summarize_all_enrichments.py
+uv run phase2/figures/generate_enrichment_plots.py
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene, using rna covariates
 uv run phase2/analyses/cis_correlation.py --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3

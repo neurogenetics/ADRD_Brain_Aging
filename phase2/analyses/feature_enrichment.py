@@ -430,15 +430,15 @@ def main():
         logger.info("Computing cell-type specificity metrics from WLS results...")
         # Calculate number of cell types each feature was tested in
         ct_counts = wls_df.groupby(feature_col)["tissue"].nunique()
-        # Create a boolean categorical metric for absolute specificity
-        is_specific = (ct_counts == 1).astype(str)
+        # Create a binary numeric metric for absolute specificity (1 = specific, 0 = broad)
+        is_specific = (ct_counts == 1).astype(int)
 
         spec_df = pd.DataFrame(
             {"num_celltypes_detected": ct_counts, "is_celltype_specific": is_specific}
         )
 
         metrics_cols_num.append("num_celltypes_detected")
-        metrics_cols_cat.append("is_celltype_specific")
+        metrics_cols_num.append("is_celltype_specific")
         features_df = features_df.join(spec_df, how="left")
 
     if not metrics_cols_num and not metrics_cols_cat and annotation_bed is None:
