@@ -117,13 +117,15 @@ uv run python phase2/analyses/post_cis_correlation_mediation.py
 tmux new -s brainage
 CELLTYPES=("Astrocytes" "Endothelial" "ExN BCL11B" "ExN CUX2" "ExN LAMP5" "ExN RELN" "ExN RMST" "ExN RORB" "ExN SEMA3E" "ExN THEMIS" "InN LAMP5" "InN PAX6" "InN PVALB" "InN SST" "InN VIP" "Microglia" "OPCs" "Oligodendrocytes")
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --cnmf-dir-name cnmf_harmony --covariates gex_pool ancestry sample_id sex
-  # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --cnmf-dir-name cnmf_harmony --covariates atac_pool ancestry sample_id sex
-  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --workers 48
-  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --workers 48
-  # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
-  # uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
+  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --exclude-ids Aging134 --workers 48
+  uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --exclude-ids Aging134 --workers 48
 done
+# for CELLTYPE in "${CELLTYPES[@]}"; do
+# uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --cnmf-dir-name cnmf_harmony --covariates gex_pool ancestry sample_id sex
+# uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --cnmf-dir-name cnmf_harmony --covariates atac_pool ancestry sample_id sex
+# uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality rna --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
+# uv run phase2/analyses/cnmf_latent_generation.py --cell-type "$CELLTYPE" --modality atac --use-aaf --cnmf-dir-name cnmf_aaf --workers 48
+# done
 tmux attach-session -t brainage
 
 # development test/comparison
@@ -131,17 +133,19 @@ uv run phase2/development/analyses/latent_generation.py --cell-type "ExN SEMA3E"
 
 # review cNMF stability figures and run latent based analysis using the determined K
 for CELLTYPE in "${CELLTYPES[@]}"; do
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto
   uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
   uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates gex_pool ancestry sex
-  # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates atac_pool ancestry sex
 done
+# for CELLTYPE in "${CELLTYPES[@]}"; do
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates gex_pool ancestry sex
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates atac_pool ancestry sex
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates gex_pool ancestry sex
+#   # uv run phase2/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --cnmf-dir-name cnmf_aaf --covariates atac_pool ancestry sex
+# done
 
 # combine the cNMF latent regression output and compute FDRs
 uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna
