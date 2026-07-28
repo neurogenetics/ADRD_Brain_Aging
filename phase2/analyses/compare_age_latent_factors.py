@@ -321,6 +321,54 @@ def main():
         })
     pairwise_df = pd.DataFrame(pairwise_results)
 
+    # Analyze significant pairs for logging
+    sig_pairs = pairwise_df[pairwise_df["fdr"] <= args.fdr_threshold]
+    
+    counts = {
+        "same_ct_same_mod": 0,
+        "same_ct_diff_mod": 0,
+        "diff_ct_same_mod": 0,
+        "diff_ct_diff_mod": 0
+    }
+    
+    age_sig_pairs_count = 0
+    
+    for _, row in sig_pairs.iterrows():
+        f1 = row["factor1"]
+        f2 = row["factor2"]
+        
+        # Filter to pairs where both factors are significantly associated with age
+        if factor_fdr_age.get(f1, 1.0) > args.fdr_threshold or factor_fdr_age.get(f2, 1.0) > args.fdr_threshold:
+            continue
+            
+        age_sig_pairs_count += 1
+        
+        f1_parts = f1.split("|")
+        f2_parts = f2.split("|")
+        
+        ct1, mod1 = f1_parts[0], f1_parts[1]
+        ct2, mod2 = f2_parts[0], f2_parts[1]
+        
+        same_ct = (ct1 == ct2)
+        same_mod = (mod1 == mod2)
+        
+        if same_ct and same_mod:
+            counts["same_ct_same_mod"] += 1
+        elif same_ct and not same_mod:
+            counts["same_ct_diff_mod"] += 1
+        elif not same_ct and same_mod:
+            counts["diff_ct_same_mod"] += 1
+        else:
+            counts["diff_ct_diff_mod"] += 1
+
+    logger.info("Significant pairwise correlation summary:")
+    logger.info(f"  Total significant pairs (correlation FDR <= {args.fdr_threshold}): {len(sig_pairs)}")
+    logger.info(f"  Pairs where BOTH factors are also age-significant (FDR <= {args.fdr_threshold}): {age_sig_pairs_count}")
+    logger.info(f"  Same cell-type, same modality: {counts['same_ct_same_mod']}")
+    logger.info(f"  Same cell-type, cross modality: {counts['same_ct_diff_mod']}")
+    logger.info(f"  Cross cell-types, same modality: {counts['diff_ct_same_mod']}")
+    logger.info(f"  Cross cell-types, cross modality: {counts['diff_ct_diff_mod']}")
+
     # Save correlation matrix
     corr_out = (
         results_dir

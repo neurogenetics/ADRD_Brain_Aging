@@ -128,9 +128,6 @@ done
 # done
 tmux attach-session -t brainage
 
-# development test/comparison
-uv run phase2/development/analyses/latent_generation.py --cell-type "ExN SEMA3E" --modality rna
-
 # review cNMF stability figures and run latent based analysis using the determined K
 for CELLTYPE in "${CELLTYPES[@]}"; do
   uv run phase2/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
@@ -167,7 +164,7 @@ done
 # done
 
 # network analysis comparisons across cell-types
-uv run phase2/analyses/summarize_qml_results.py --help
+uv run phase2/analyses/summarize_qml_results.py
 
 # network analysis visualizations
 for CELLTYPE in "${CELLTYPES[@]}"; do
