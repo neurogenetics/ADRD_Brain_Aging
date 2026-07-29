@@ -35,7 +35,7 @@ synapse login
 # 
 # cut -f1 fastq_manifest.tsv | while read synid
 # do
-#     synapse get "$synid" --downloadLocation SEAAD_FASTQ
+    # synapse get "$synid" --downloadLocation SEAAD_FASTQ
 # done
 
 ###this allegedly has to be done interactively and looks like it will take ~5 hr to download all (even though biowulf is going strong at ~140MB/s, maybe I'm missing somethign that says I should use helix?). If I cannot do in one sitting I need to pause the process and check which are downloaded, subset fastq_manifest down and continue download.
@@ -157,3 +157,5 @@ wc -l "${SWARM_FILE}"
 head -n 3 "${SWARM_FILE}"
 
 swarm -f /data/ADRD/brain_aging/exploration/scripts/Phase2/AD/2_download_groups.swarm -g 4 -t 1 --module synapseclient
+
+###for some reason processes 8 (syn64595012) and 48 (syn64592955) failed: need to check others in 1_file_manifest_check.R then come back and do the missing ones interactively....
