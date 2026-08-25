@@ -96,6 +96,15 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Convert paths to absolute paths immediately to prevent permission/relative path errors
+    args.input_file = os.path.abspath(args.input_file)
+    args.output_file = os.path.abspath(args.output_file)
+    args.full_doublet_obs_file = os.path.abspath(args.full_doublet_obs_file)
+    if args.plot_file:
+        args.plot_file = os.path.abspath(args.plot_file)
+    if args.log_file:
+        args.log_file = os.path.abspath(args.log_file)
+
     # Configure additional log file handler if specified
     if args.log_file:
         log_dir = os.path.dirname(args.log_file)
