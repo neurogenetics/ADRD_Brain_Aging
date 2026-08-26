@@ -10,6 +10,7 @@ dependencies = [
     "cellbender>=0.4.0",
     "cnmf>=1.7.0",
     "harmonypy>=0.2.0",
+    "hdf5plugin>=7.0.0",
     "igraph>=1.0.0",
     "jupyterlab>=4.4.7",
     "jupyterlab-git>=0.51.2",

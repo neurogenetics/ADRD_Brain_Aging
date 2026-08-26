@@ -71,3 +71,6 @@ while read SUFFIXID; do
     fi
   done
 done <"$DATADIR"/public/seaad/suffix_ids.list
+
+# per sample combine the RNA and ATAC data into a mudata object, also integrate donor info into the obbs
+uv run python phase2/development/SEAAD/combine_modalities.py --output-dir "$DATADIR"/public/seaad
