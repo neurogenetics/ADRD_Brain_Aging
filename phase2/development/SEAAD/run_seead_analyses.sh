@@ -61,3 +61,13 @@ while read SUFFIXID; do
     --log-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.log \
     --temp-dir "$DATADIR"/tmp &
 done <"$DATADIR"/public/seaad/suffix_ids.list
+
+# make sure we have all the post-doublet files
+while read SUFFIXID; do
+  for MODALITY in "rna" "atac"; do
+    SAMPLEFILE="$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_"$MODALITY"_filtered.h5ad
+    if [ ! -f "$SAMPLEFILE" ]; then
+      echo "Missing file: $SAMPLEFILE"
+    fi
+  done
+done <"$DATADIR"/public/seaad/suffix_ids.list
