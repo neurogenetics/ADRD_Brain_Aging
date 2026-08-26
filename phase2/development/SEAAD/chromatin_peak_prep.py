@@ -90,6 +90,12 @@ def parse_args():
         default="",
         help="Path to save execution log output in addition to stdout.",
     )
+    parser.add_argument(
+        "--tsse-plot",
+        type=str,
+        default="",
+        help="Path to save the TSSe enrichment plot (PNG). If not specified, it will not be saved.",
+    )
     return parser.parse_args()
 
 
@@ -212,6 +218,8 @@ def main():
     args.output_file = os.path.abspath(args.output_file)
     if args.log_file:
         args.log_file = os.path.abspath(args.log_file)
+    if args.tsse_plot:
+        args.tsse_plot = os.path.abspath(args.tsse_plot)
 
     # Configure additional log file handler if specified
     if args.log_file:
@@ -276,11 +284,29 @@ def main():
         logger.info("Computing TSS enrichment (TSSe) scores...")
         snap.metrics.tsse(adata, genome_obj)
 
+        # Generate TSSe plot visualization if requested
+        if args.tsse_plot:
+            logger.info(f"Saving TSSe plot visualization to: {args.tsse_plot}")
+            tsse_plot_dir = os.path.dirname(args.tsse_plot)
+            if tsse_plot_dir:
+                os.makedirs(tsse_plot_dir, exist_ok=True)
+            try:
+                snap.pl.tsse(adata, out_file=args.tsse_plot, show=False)
+                logger.info("TSSe plot visualization successfully saved.")
+            except Exception as e:
+                logger.error(f"Failed to generate/save TSSe plot visualization: {e}")
+
         # 3. Filter cells based on TSSe and unique fragment counts
+        n_before_filter_cells = adata.n_obs
         logger.info(
             f"Filtering cells (min_counts={args.min_counts}, min_tsse={args.min_tsse})..."
         )
         snap.pp.filter_cells(adata, min_counts=args.min_counts, min_tsse=args.min_tsse)
+        n_after_filter_cells = adata.n_obs
+        logger.info(
+            f"Cells filtered by filter_cells(): {n_before_filter_cells - n_after_filter_cells} "
+            f"(before: {n_before_filter_cells}, after: {n_after_filter_cells})"
+        )
 
         # 4. Filter cells based on mitochondrial contamination fraction
         if "frac_mito" in adata.obs:
@@ -288,6 +314,12 @@ def main():
                 f"Filtering cells by mitochondrial contamination (max_mito={args.max_mito})..."
             )
             mito_mask = adata.obs["frac_mito"] < args.max_mito
+            n_before_mito = adata.n_obs
+            n_after_mito = sum(mito_mask)
+            logger.info(
+                f"Cells filtered by max_mito mask: {n_before_mito - n_after_mito} "
+                f"(before: {n_before_mito}, after: {n_after_mito})"
+            )
             adata = subset_robust(adata, mito_mask)
         else:
             logger.warning(

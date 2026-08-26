@@ -58,6 +58,7 @@ while read SUFFIXID; do
     --fragment-file "$DATADIR"/public/seaad/src_data/"$SUFFIXID"_atac_fragments.tsv.gz \
     --cpeaks-bed "$DATADIR"/src_data/aging_phase2_consensus_atac_peaks.bed \
     --output-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac_filtered.h5ad \
+    --tsse-plot "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.png \
     --log-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.log \
     --temp-dir "$DATADIR"/tmp &
 done <"$DATADIR"/public/seaad/suffix_ids.list
