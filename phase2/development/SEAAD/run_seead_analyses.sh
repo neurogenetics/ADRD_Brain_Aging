@@ -58,10 +58,12 @@ while read SUFFIXID; do
     --fragment-file "$DATADIR"/public/seaad/src_data/"$SUFFIXID"_atac_fragments.tsv.gz \
     --cpeaks-bed "$DATADIR"/src_data/aging_phase2_consensus_atac_peaks.bed \
     --output-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac_filtered.h5ad \
-    --tsse-plot "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.png \
+    --min-tsse 2.5 \
+    --tsse-plot "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.html \
     --log-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac.log \
     --temp-dir "$DATADIR"/tmp &
 done <"$DATADIR"/public/seaad/suffix_ids.list
+wait
 
 # make sure we have all the post-doublet files
 while read SUFFIXID; do
@@ -75,3 +77,6 @@ done <"$DATADIR"/public/seaad/suffix_ids.list
 
 # per sample combine the RNA and ATAC data into a mudata object, also integrate donor info into the obbs
 uv run python phase2/development/SEAAD/combine_modalities.py --output-dir "$DATADIR"/public/seaad
+
+# combine the per sample mudata objects into a single cohort mudata object
+uv run python phase2/development/SEAAD/concat_mudata.py --output-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu

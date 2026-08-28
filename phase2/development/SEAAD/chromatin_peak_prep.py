@@ -94,7 +94,7 @@ def parse_args():
         "--tsse-plot",
         type=str,
         default="",
-        help="Path to save the TSSe enrichment plot (PNG). If not specified, it will not be saved.",
+        help="Path to save the TSSe enrichment plot (PNG or HTML). If not specified, it will not be saved.",
     )
     return parser.parse_args()
 
@@ -290,11 +290,31 @@ def main():
             tsse_plot_dir = os.path.dirname(args.tsse_plot)
             if tsse_plot_dir:
                 os.makedirs(tsse_plot_dir, exist_ok=True)
-            try:
-                snap.pl.tsse(adata, out_file=args.tsse_plot, show=False)
-                logger.info("TSSe plot visualization successfully saved.")
-            except Exception as e:
-                logger.error(f"Failed to generate/save TSSe plot visualization: {e}")
+            
+            # Check if user explicitly asked for HTML
+            if args.tsse_plot.lower().endswith(".html"):
+                try:
+                    snap.pl.tsse(adata, out_file=args.tsse_plot, show=False)
+                    logger.info("Interactive HTML plot successfully saved.")
+                except Exception as e:
+                    logger.error(f"Failed to generate/save TSSe HTML plot: {e}")
+            else:
+                # Try saving static image first (e.g. PNG)
+                try:
+                    snap.pl.tsse(adata, out_file=args.tsse_plot, show=False)
+                    logger.info("TSSe plot visualization successfully saved.")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to save static plot image to {args.tsse_plot} due to missing static export dependencies (Kaleido/Chrome): {e}"
+                    )
+                    # Fallback to interactive HTML
+                    html_path = os.path.splitext(args.tsse_plot)[0] + ".html"
+                    logger.info(f"Falling back to saving interactive HTML plot to: {html_path}")
+                    try:
+                        snap.pl.tsse(adata, out_file=html_path, show=False)
+                        logger.info("Interactive HTML plot successfully saved.")
+                    except Exception as html_err:
+                        logger.error(f"Failed to save fallback HTML plot: {html_err}")
 
         # 3. Filter cells based on TSSe and unique fragment counts
         n_before_filter_cells = adata.n_obs
