@@ -15,9 +15,11 @@ from sklearn.metrics import silhouette_score
 import hdf5plugin
 
 # Silence warnings to keep logs clean
+from pandas.errors import PerformanceWarning
 warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
 warnings.filterwarnings("ignore", category=FutureWarning, module="mudata")
 warnings.filterwarnings("ignore", category=UserWarning, module="scanpy")
+warnings.filterwarnings("ignore", category=PerformanceWarning)
 
 # Configure logging
 logging.basicConfig(
@@ -47,28 +49,22 @@ def parse_args():
         help="Path to the processed/clustered GEX AnnData (.h5ad) file containing cell labels",
     )
     parser.add_argument(
-        "--output-h5ad",
+        "--resolution-dir",
         type=str,
         required=True,
-        help="Path where the final subclustered AnnData (.h5ad) file will be saved",
+        help="Directory where all subclustering output files (h5ad, plot, logs, markers) will be saved",
+    )
+    parser.add_argument(
+        "--name-prefix",
+        type=str,
+        required=True,
+        help="Prefix name for the output files (e.g. 'ExN' or 'InN') to prevent files overwriting each other",
     )
     parser.add_argument(
         "--model-dir",
         type=str,
         default=None,
         help="Directory to save the newly trained scVI subclustering model (optional)",
-    )
-    parser.add_argument(
-        "--resolution-dir",
-        type=str,
-        required=True,
-        help="Directory where resolution sweep CSV outputs (markers, avg expression) will be saved",
-    )
-    parser.add_argument(
-        "--output-plot",
-        type=str,
-        required=True,
-        help="Path where the multi-panel visualization UMAP/silhouette plot will be saved",
     )
 
     # Cohort subsetting
@@ -155,7 +151,7 @@ def parse_args():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8000,
+        default=10000,
         help="Batch size for scVI training (default: 10000)",
     )
     parser.add_argument(
@@ -173,13 +169,15 @@ def main():
     # Set seeds
     scvi.settings.seed = args.seed
 
-    # Create directories
+    # Create directory
     os.makedirs(args.resolution_dir, exist_ok=True)
-    os.makedirs(os.path.dirname(os.path.abspath(args.output_h5ad)), exist_ok=True)
-    os.makedirs(os.path.dirname(os.path.abspath(args.output_plot)), exist_ok=True)
+
+    # Define prefix-aware output file paths inside resolution_dir
+    output_h5ad_path = os.path.join(args.resolution_dir, f"{args.name_prefix}_subclustered.h5ad")
+    output_plot_path = os.path.join(args.resolution_dir, f"{args.name_prefix}_subclustering_sweep.png")
+    log_file_path = os.path.join(args.resolution_dir, f"{args.name_prefix}_subcluster_rna.log")
 
     # Configure file logging
-    log_file_path = os.path.join(args.resolution_dir, "subcluster_rna.log")
     file_handler = logging.FileHandler(log_file_path, mode="a")
     file_handler.setFormatter(
         logging.Formatter(
@@ -311,7 +309,7 @@ def main():
             logger.info("Shape after highly variable genes step: %s", adata_gex.shape)
 
             # Save the variable features for downstream use
-            hvg_file = os.path.join(args.resolution_dir, "variable_features.txt")
+            hvg_file = os.path.join(args.resolution_dir, f"{args.name_prefix}_variable_features.txt")
             logger.info("Saving highly variable features index list to: %s", hvg_file)
             variable_genes = adata_gex.var[
                 adata_gex.var["highly_variable"]
@@ -369,6 +367,11 @@ def main():
     logger.info("Extracting scVI normalized expression...")
     adata_gex.layers["scvi_normalized"] = model.get_normalized_expression(
         library_size=10e4
+    )
+
+    logger.info("Computing log-transformed normalized layer...")
+    adata_gex.layers["scvi_normalized_log1p"] = np.log1p(
+        adata_gex.layers["scvi_normalized"]
     )
 
     logger.info("Computing neighborhood graph and UMAP...")
@@ -470,7 +473,7 @@ def main():
                 .mean()
             )
 
-            res_avg_exp_file = os.path.join(args.resolution_dir, f"avgexp_res{res}.csv")
+            res_avg_exp_file = os.path.join(args.resolution_dir, f"{args.name_prefix}_avgexp_res{res}.csv")
             avgexp.to_csv(res_avg_exp_file)
 
             # Marker calculation
@@ -479,11 +482,11 @@ def main():
                 groupby=new_leiden_key,
                 method="wilcoxon",
                 pts=True,
-                layer="scvi_normalized",
+                layer="scvi_normalized_log1p",
             )
             markers_df = sc.get.rank_genes_groups_df(adata_gex, group=None)
             res_markers_file = os.path.join(
-                args.resolution_dir, f"markers_res{res}.csv"
+                args.resolution_dir, f"{args.name_prefix}_markers_res{res}.csv"
             )
             markers_df.to_csv(res_markers_file, index=False)
         except Exception as e:
@@ -498,7 +501,7 @@ def main():
             best_res = res
 
     # Save the aggregated resolutions metadata CSV
-    res_obs_file = os.path.join(args.resolution_dir, "resolution_assignments_obs.csv")
+    res_obs_file = os.path.join(args.resolution_dir, f"{args.name_prefix}_resolution_assignments_obs.csv")
     logger.info("Saving multi-resolution assignments and metadata to: %s", res_obs_file)
     try:
         res_obs_info = pd.concat([clust_assign_by_res, adata_gex.obs], axis="columns")
@@ -567,21 +570,21 @@ def main():
         axes[2].grid(True, linestyle="--", alpha=0.5)
 
         plt.tight_layout()
-        plt.savefig(args.output_plot, bbox_inches="tight")
+        plt.savefig(output_plot_path, bbox_inches="tight")
         plt.close()
-        logger.info("UMAP multi-panel plot saved to: %s", args.output_plot)
+        logger.info("UMAP multi-panel plot saved to: %s", output_plot_path)
     except Exception as e:
         logger.exception("Failed to write visualization plots: %s", str(e))
 
     # 10. Save the final AnnData
-    logger.info("Saving final subclustered AnnData to: %s", args.output_h5ad)
+    logger.info("Saving final subclustered AnnData to: %s", output_h5ad_path)
     try:
         # Sanitize obs to prevent h5py write exceptions for object/mixed columns
         for col in adata_gex.obs.columns:
             if adata_gex.obs[col].dtype == "object":
                 adata_gex.obs[col] = adata_gex.obs[col].fillna("").astype(str)
 
-        adata_gex.write(args.output_h5ad)
+        adata_gex.write(output_h5ad_path)
         logger.info("=== GEX Subclustering Completed Successfully ===")
     except Exception as e:
         logger.exception("Failed to write subclustered AnnData file: %s", str(e))

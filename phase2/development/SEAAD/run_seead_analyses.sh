@@ -119,10 +119,9 @@ uv run python phase2/development/SEAAD/annotate_clusters.py \
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
-  --output-h5ad "$DATADIR"/public/seaad/resolution_selection/seaad_ec_rna_subclustered_ExN.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_ExN_scvi \
   --resolution-dir "$DATADIR"/public/seaad/resolution_selection \
-  --output-plot "$DATADIR"/public/seaad/figures/subclustering_ExN_sweep.png \
+  --name-prefix "seaad_ec_ExN" \
   --subset-col leiden_scvi \
   --subset-values "0,10,11,2,3,8,9" \
   --annotation-col celltype_major \
@@ -131,10 +130,9 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
-  --output-h5ad "$DATADIR"/public/seaad/resolution_selection/seaad_ec_rna_subclustered_InN.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_InN_scvi \
   --resolution-dir "$DATADIR"/public/seaad/resolution_selection \
-  --output-plot "$DATADIR"/public/seaad/figures/subclustering_InN_sweep.png \
+  --name-prefix "seaad_ec_InN" \
   --subset-col leiden_scvi \
   --subset-values "1,12,13,14,15,4,5,6" \
   --annotation-col celltype_major \
@@ -143,10 +141,9 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
-  --output-h5ad "$DATADIR"/public/seaad/resolution_selection/seaad_ec_rna_subclustered_NonNeuronal.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_NonNeuronal_scvi \
   --resolution-dir "$DATADIR"/public/seaad/resolution_selection \
-  --output-plot "$DATADIR"/public/seaad/figures/subclustering_NonNeuronal_sweep.png \
+  --name-prefix "seaad_ec_NonNeuronal" \
   --subset-col leiden_scvi \
   --subset-values "16,17,18,19,20,7" \
   --annotation-col celltype_major \
