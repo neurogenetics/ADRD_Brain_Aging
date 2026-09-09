@@ -156,3 +156,14 @@ uv run python phase2/development/SEAAD/integrate_saha_labels.py \
   --labels-file "$DATADIR"/public/seaad/resolution_selection/seaad_ec_all_celltypes_final_taxonomy.csv \
   --barcode-col unnamed_1 \
   --label-cols broad_cell_type anno anno_coarse
+
+# model the RNA and ATAC using MultiVI
+uv run python phase2/development/SEAAD/multivi_modeling.py \
+  --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
+  --output-file "$DATADIR"/public/seaad/seaad_ec_multiome_multivi.h5mu \
+  --plot-cols sex diagnosis broad_cell_type anno anno_coarse \
+  --batch-key donor_id \
+  --categorical-covariates sex race \
+  --detect-hv-features \
+  --top-genes 3000 \
+  --top-peaks 3000
