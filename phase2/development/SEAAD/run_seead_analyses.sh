@@ -115,7 +115,7 @@ uv run python phase2/development/SEAAD/annotate_clusters.py \
   --output-plot "$DATADIR"/public/seaad/umap_celltype_annotations.png
 
 # perform subclustering by broad cell-type
-# excitatory neurons
+## excitatory neurons
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
@@ -126,7 +126,7 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --subset-values "0,10,11,2,3,8,9" \
   --annotation-col celltype_major \
   --detect-hv-features
-# inhibitory neurons
+## inhibitory neurons
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
@@ -137,7 +137,7 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --subset-values "1,12,13,14,15,4,5,6" \
   --annotation-col celltype_major \
   --detect-hv-features
-# non-neuronal
+## non-neuronal
 uv run python phase2/development/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
@@ -148,3 +148,11 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --subset-values "16,17,18,19,20,7" \
   --annotation-col celltype_major \
   --detect-hv-features
+
+# integrate the SAHA cell-type labels into the mudata object
+uv run python phase2/development/SEAAD/integrate_saha_labels.py \
+  --input-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
+  --output-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
+  --labels-file "$DATADIR"/public/seaad/resolution_selection/seaad_ec_all_celltypes_final_taxonomy.csv \
+  --barcode-col unnamed_1 \
+  --label-cols broad_cell_type anno anno_coarse
