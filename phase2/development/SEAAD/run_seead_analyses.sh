@@ -165,5 +165,57 @@ uv run python phase2/development/SEAAD/multivi_modeling.py \
   --batch-key donor_id \
   --categorical-covariates sex race \
   --detect-hv-features \
-  --top-genes 3000 \
-  --top-peaks 3000
+  --top-genes 3500 \
+  --top-peaks 3500
+
+# convert to pseudobulk per cell-type
+uv run phase2/development/SEAAD/analyses/pseudobulk_convert.py \
+  --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
+  --project seaad_ec_multiome \
+  --work-dir "$DATADIR"/public/seaad \
+  --cell-type-col anno_coarse \
+  --sample-col donor_id \
+  --aggregate-type sum \
+  --exclude-ids H21.33.018,H21.33.001,H20.33.036 \
+  --debug
+
+# format the initial knowns covariates by modality
+uv run phase2/development/SEAAD/analyses/format_covariates.py \
+  --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_multivi.h5mu \
+  --cell-type-col anno_coarse \
+  --sample-col donor_id \
+  --exclude-ids H21.33.018,H21.33.001,H20.33.036
+
+# run the per cell-type pseudobulk data prep and generate non-target variance components
+MODALITIES="rna atac"
+for MODALITY in ${MODALITIES[@]}; do
+  phase2/development/SEAAD/run_prep_pb_jobs.sh prep_pb_data.py ${MODALITY}
+done
+
+# run the variance partition analyis per cell-type
+for MODALITY in ${MODALITIES[@]}; do
+  phase2/development/SEAAD/run_prep_pb_jobs.sh run_variance_partition.py ${MODALITY}
+done
+
+# since using WLS check cell-types and modalities for correlations between cell counts and age
+uv run phase2/development/SEAAD/analyses/cell_counts_regression.py
+
+# run the age regression analysis per cell-type
+REGRESSTYPES="wls vwrlm"
+for MODALITY in ${MODALITIES[@]}; do
+  for REGRESSTYPE in ${REGRESSTYPES[@]}; do
+    phase2/development/SEAAD/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
+  done
+done
+
+# post process the age regressions
+for MODALITY in ${MODALITIES[@]}; do
+  for REGRESSTYPE in ${REGRESSTYPES[@]}; do
+    uv run phase2/development/SEAAD/analyses/post_pseudobulk_regression.py --modality ${MODALITY} --regression-type ${REGRESSTYPE}
+  done
+done
+
+# check the general regression against the robust to check for outlier driven results
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/development/SEAAD/analyses/filter_regression_type_differences.py --modality ${MODALITY}
+done
