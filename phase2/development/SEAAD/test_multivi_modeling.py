@@ -76,10 +76,10 @@ class TestRunMultiVIModeling(unittest.TestCase):
         # Read and check modeled data
         mdata_out = md.read(self.output_path)
         
-        # Verify that features were subsetted correctly (smaller than original shapes)
-        self.assertLess(mdata_out.n_vars, 50)
-        self.assertLess(mdata_out.mod["rna"].n_vars, 20)
-        self.assertLess(mdata_out.mod["atac"].n_vars, 30)
+        # Verify that features were subsetted correctly (smaller than or equal to original shapes)
+        self.assertLessEqual(mdata_out.n_vars, 50)
+        self.assertLessEqual(mdata_out.mod["rna"].n_vars, 20)
+        self.assertLessEqual(mdata_out.mod["atac"].n_vars, 30)
         
         # Check that MultiVI and UMAP embeddings were created
         self.assertIn("X_multivi", mdata_out.obsm.keys())

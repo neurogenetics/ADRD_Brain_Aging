@@ -47,7 +47,7 @@ done
 
 # visualize similarities of age effects between tissues
 for MODALITY in ${MODALITIES[@]}; do
-  uv run phase2/figures/celltype_age_effect_similarity.py --modality ${MODALITY}
+  uv run phase2/figures/celltype_target_effect_similarity.py --modality ${MODALITY}
 done
 
 # power analysis of this study

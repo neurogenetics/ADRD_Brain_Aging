@@ -108,7 +108,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         for rtype in ["ols", "vwrlm"]:
             cmd_post = [
                 sys.executable,
-                "phase2/development/SEAAD/analyses/post_pseudobulk_regression.py",
+                "phase2/analyses/post_pseudobulk_regression.py",
                 "--project", self.project,
                 "--work-dir", self.test_dir.name,
                 "--modality", "rna",
@@ -143,7 +143,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # 3. Run filter_regression_type_differences.py
         cmd_filter = [
             sys.executable,
-            "phase2/development/SEAAD/analyses/filter_regression_type_differences.py",
+            "phase2/analyses/filter_regression_type_differences.py",
             "--project", self.project,
             "--work-dir", self.test_dir.name,
             "--modality", "rna",
@@ -206,7 +206,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # 6. Run celltype_target_effect_similarity.py (figures)
         cmd_similarity = [
             sys.executable,
-            "phase2/development/SEAAD/figures/celltype_target_effect_similarity.py",
+            "phase2/figures/celltype_target_effect_similarity.py",
             "--project", self.project,
             "--work-dir", self.test_dir.name,
             "--modality", "rna",
@@ -217,7 +217,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         self.assertEqual(res_similarity.returncode, 0, f"celltype_target_effect_similarity failed:\n{res_similarity.stderr}\n{res_similarity.stdout}")
         
         # Assert clustermap image exists
-        plot_path = os.path.join(self.figs_dir, f"{self.project}_rna_dx_effect_similarity_clustermap.png")
+        plot_path = os.path.join(self.figs_dir, f"{self.project}.rna.ols.celltype_similarity.dx.coef.png")
         if not os.path.exists(plot_path):
             print("--- SIMILARITY SCRIPT STDOUT ---")
             print(res_similarity.stdout)

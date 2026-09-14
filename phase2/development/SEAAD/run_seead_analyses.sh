@@ -211,11 +211,30 @@ done
 # post process the age regressions
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
-    uv run phase2/development/SEAAD/analyses/post_pseudobulk_regression.py --modality ${MODALITY} --regression-type ${REGRESSTYPE}
+    uv run phase2/analyses/post_pseudobulk_regression.py \
+      --modality ${MODALITY} \
+      --regression-type ${REGRESSTYPE} \
+      --target-variable dx \
+      --no-volcano-per-celltype \
+      --work-dir "$DATADIR"/public/seaad \
+      --project seaad_ec_multiome
   done
 done
 
 # check the general regression against the robust to check for outlier driven results
 for MODALITY in ${MODALITIES[@]}; do
-  uv run phase2/development/SEAAD/analyses/filter_regression_type_differences.py --modality ${MODALITY}
+  uv run phase2/analyses/filter_regression_type_differences.py \
+    --modality ${MODALITY} \
+    --target-variable dx \
+    --work-dir "$DATADIR"/public/seaad \
+    --project seaad_ec_multiome
+done
+
+# visualize similarities of disease status effects between tissues
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/celltype_target_effect_similarity.py \
+    --modality ${MODALITY} \
+    --target-variable dx \
+    --work-dir "$DATADIR"/public/seaad \
+    --project seaad_ec_multiome
 done

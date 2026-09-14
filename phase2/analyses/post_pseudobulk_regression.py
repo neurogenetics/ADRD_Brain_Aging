@@ -42,9 +42,15 @@ def parse_args():
         help="Data modality (rna or atac).",
     )
     parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary target variable column in covariates (default: 'age').",
+    )
+    parser.add_argument(
         "--regression-type",
         type=str,
-        default="ols",
+        default="wls",
         choices=["ols", "glm", "glm_tweedie", "rlm", "wls", "vwrlm"],
         help="Regression method to use.",
     )
@@ -89,6 +95,7 @@ def volcano_plot(
     project: str,
     modality: str,
     regression_type: str,
+    target_variable: str,
     figures_dir: Path,
     x_term: str = "log2fc",
     y_term: str = "p-value",
@@ -129,14 +136,15 @@ def volcano_plot(
         alpha=0.6,
     )
 
-    plt.title(title)
+    plt.title(f"{title} - {target_variable.upper()} Effect")
     plt.xlabel("Effect Size (log2FC)")
     plt.ylabel("-log10(p-value)")
     plt.axhline(-np.log10(alpha), color="red", linestyle="--", alpha=0.5)
 
     safe_title = title.replace(" ", "_").replace("/", "-")
     fig_file = (
-        figures_dir / f"{project}.{modality}.{regression_type}_volcano.{safe_title}.png"
+        figures_dir
+        / f"{project}.{modality}.{regression_type}_volcano.{target_variable}.{safe_title}.png"
     )
     plt.savefig(fig_file, dpi=300)
     plt.close()
@@ -155,9 +163,7 @@ def main():
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     # Configure logging
-    log_filename = (
-        f"{logs_dir}/{args.modality}_{args.regression_type}_post_regression.log"
-    )
+    log_filename = f"{logs_dir}/{args.modality}_{args.regression_type}_{args.target_variable}_post_regression.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -167,36 +173,16 @@ def main():
     logger.info(f"Command line: {' '.join(sys.argv)}")
     logger.info(f"Logging configured. Writing to {log_filename}")
 
-    # Setup directories
-    work_dir = Path(args.work_dir)
-    results_dir = work_dir / "results"
-    figures_dir = work_dir / "figures"
-    logs_dir = work_dir / "logs"
-    figures_dir.mkdir(parents=True, exist_ok=True)
-
     project = args.project
     modality = args.modality.lower()  # ensure lowercase to match file patterns
     regression_type = args.regression_type
-
-    # In the notebook, 'GEX' was used, but files seem to use lowercase 'rna'/'atac' based on previous scripts.
-    # The user input args.modality is lowercase from choices.
-    # NOTE: The notebook used 'GEX'/'ATAC' uppercase for some vars but 'rna'/'atac' in filenames?
-    # Let's verify file pattern.
-    # Notebook: results_file = f'{results_dir}/{project}.{modality}.{prefix_type}.{REGRESSION_TYPE}.age.csv'
-    # Notebook Params: modality = 'GEX'
-    # BUT prep_pb_data.py uses 'rna'/'atac'.
-    # pseudobulk_regression.py uses 'rna'/'atac'.
-    # So we should stick to lowercase 'rna'/'atac'.
+    target_variable = args.target_variable
 
     # 1. Aggregation
     logger.info("Aggregating regression results...")
 
     # Pattern to match regression result files
-    # Format: {project}.{modality}.{cell_type}.{regression_type}.age.csv
-    # e.g. aging_phase2.rna.Microglia.glm_tweedie.age.csv
-
-    # We can glob them
-    pattern = f"{project}.{modality}.*.{regression_type}.age.csv"
+    pattern = f"{project}.{modality}.*.{regression_type}.{target_variable}.csv"
     result_files = list(results_dir.glob(pattern))
 
     if not result_files:
@@ -207,8 +193,6 @@ def main():
     for file_path in result_files:
         try:
             df = read_csv(file_path)
-            # cell_type is in the filename, but also typically in the dataframe column 'tissue'
-            # if the regression script put it there.
             if "tissue" not in df.columns:
                 continue
 
@@ -262,20 +246,13 @@ def main():
     logger.info(summary_df)
 
     # 5. Save Results
-    # Output filenames
-    # notebook used: {project}.{modality}.{prefix_type}.{REGRESSION_TYPE}.age.csv
-    # We don't have "prefix_type" (broad/specific) explicitly passed, usually implied by cell types?
-    # Or maybe we should output one big file for everything.
-    # Notebook logic: 'curated_type' -> 'broad', 'cluster_name' -> 'specific'.
-    # Our scripts seem to run per cell-type without knowing if it's broad or specific.
-    # We will just name it "all_celltypes".
-
     results_file = (
-        results_dir / f"{project}.all_celltypes.{modality}.{regression_type}.age.csv"
+        results_dir
+        / f"{project}.all_celltypes.{modality}.{regression_type}.{target_variable}.csv"
     )
     results_fdr_file = (
         results_dir
-        / f"{project}.all_celltypes.{modality}.{regression_type}_fdr.age.csv"
+        / f"{project}.all_celltypes.{modality}.{regression_type}_fdr.{target_variable}.csv"
     )
 
     logger.info(f"Saving full results to {results_file}")
@@ -295,6 +272,7 @@ def main():
         project,
         modality,
         regression_type,
+        target_variable,
         figures_dir,
         title="All Cell Types",
     )
@@ -310,6 +288,7 @@ def main():
                     project,
                     modality,
                     regression_type,
+                    target_variable,
                     figures_dir,
                     title=ct,
                 )

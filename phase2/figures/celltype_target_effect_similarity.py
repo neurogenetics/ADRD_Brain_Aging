@@ -43,6 +43,12 @@ def parse_args():
         help="Regression method to use.",
     )
     parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary target variable column in covariates (default: 'age').",
+    )
+    parser.add_argument(
         "--effect-column",
         type=str,
         default="coef",
@@ -82,14 +88,15 @@ def main():
     modality = args.modality.lower()
     regression_type = args.regression_type
     effect_column = args.effect_column
+    target_variable = args.target_variable
 
     # Define file paths
     fdr_file = (
         results_dir
-        / f"{project}.{modality}.all_celltypes.{regression_type}_fdr_filtered.age.csv"
+        / f"{project}.{modality}.all_celltypes.{regression_type}_fdr_filtered.{target_variable}.csv"
     )
     full_results_file = (
-        results_dir / f"{project}.all_celltypes.{modality}.{regression_type}.age.csv"
+        results_dir / f"{project}.all_celltypes.{modality}.{regression_type}.{target_variable}.csv"
     )
 
     if not fdr_file.exists():
@@ -147,11 +154,11 @@ def main():
     # Plot
     fig_filename_png = (
         figures_dir
-        / f"{project}.{modality}.{regression_type}.celltype_similarity.{effect_column}.png"
+        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}.png"
     )
     fig_filename_svg = (
         figures_dir
-        / f"{project}.{modality}.{regression_type}.celltype_similarity.{effect_column}.svg"
+        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}.svg"
     )
     logger.info("Generating clustered heatmap.")
 
@@ -172,7 +179,7 @@ def main():
     g.ax_col_dendrogram.set_visible(False)
 
     g.ax_heatmap.set_title(
-        f"Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}",
+        f"Cell-Type Similarity\nModality: {modality.upper()}, Target: {target_variable.upper()}, Effect: {effect_column}",
         pad=20,
     )
     g.ax_heatmap.set_xlabel("Cell Type")
