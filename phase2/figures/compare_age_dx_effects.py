@@ -284,7 +284,10 @@ def main():
             vmin=-1,
             vmax=1,
             cbar_pos=(1.05, 0.2, 0.03, 0.6),
+            dendrogram_ratio=0.01,
         )
+        g.ax_row_dendrogram.set_visible(False)
+        g.ax_col_dendrogram.set_visible(False)
         
         g.ax_heatmap.set_title(
             f"Age vs Dx Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}",
