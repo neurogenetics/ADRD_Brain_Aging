@@ -245,5 +245,6 @@ for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/compare_age_dx_effects.py \
     --modality ${MODALITY} \
     --regression-type wls \
-    --effect-column coef
+    --effect-column coef \
+    --cell-type-map "Astro:Astrocytes,Micro:Microglia,OPC:OPCs,Oligo:Oligodendrocytes"
 done

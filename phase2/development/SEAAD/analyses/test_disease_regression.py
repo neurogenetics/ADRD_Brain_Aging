@@ -250,8 +250,18 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # 8. Run compare_age_dx_effects.py (comparison utility)
         # First, mock Age files in the same results_dir
         import shutil
-        shutil.copy(ols_fdr_file, os.path.join(self.results_dir, f"aging_phase2.rna.all_celltypes.ols_fdr_filtered.age.csv"))
-        shutil.copy(ols_full_file, os.path.join(self.results_dir, f"aging_phase2.all_celltypes.rna.ols.age.csv"))
+        age_fdr_mock_path = os.path.join(self.results_dir, f"aging_phase2.rna.all_celltypes.ols_fdr_filtered.age.csv")
+        age_full_mock_path = os.path.join(self.results_dir, f"aging_phase2.all_celltypes.rna.ols.age.csv")
+        shutil.copy(ols_fdr_file, age_fdr_mock_path)
+        shutil.copy(ols_full_file, age_full_mock_path)
+        
+        # Modify Age mock files to replace 'Astrocyte' with 'Astrocytes' to test cell_type mapping
+        for mock_path in [age_fdr_mock_path, age_full_mock_path]:
+            with open(mock_path, "r") as f:
+                content = f.read()
+            content = content.replace("Astrocyte", "Astrocytes")
+            with open(mock_path, "w") as f:
+                f.write(content)
         
         # We also need to copy the dx FDR filtered file to match the expected fdr file format
         shutil.copy(ols_fdr_file, os.path.join(self.results_dir, f"seaad_ec_multiome.rna.all_celltypes.ols_fdr_filtered.dx.csv"))
@@ -266,6 +276,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
             "--modality", "rna",
             "--regression-type", "ols",
             "--effect-column", "coef",
+            "--cell-type-map", "Astrocytes:Astrocyte",
         ]
         res_compare = run(cmd_compare, capture_output=True, text=True)
         self.assertEqual(res_compare.returncode, 0, f"compare_age_dx_effects failed:\n{res_compare.stderr}\n{res_compare.stdout}")

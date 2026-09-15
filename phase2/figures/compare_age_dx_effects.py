@@ -73,8 +73,25 @@ def parse_args():
         choices=["coef", "z", "fc", "log2fc", "percentchange"],
         help="Effect column to use for Spearman correlation.",
     )
+    parser.add_argument(
+        "--cell-type-map",
+        type=str,
+        default=None,
+        help="Comma-separated mapping of Age cell-type names to Dx names, format: 'AgeName:DxName,AgeName2:DxName2'",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
+
+
+def parse_cell_type_map(map_str):
+    if not map_str:
+        return {}
+    mapping = {}
+    for item in map_str.split(","):
+        if ":" in item:
+            k, v = item.split(":", 1)
+            mapping[k.strip()] = v.strip()
+    return mapping
 
 
 def main():
@@ -149,6 +166,15 @@ def main():
     age_full = pd.read_csv(age_full_file)
     dx_fdr = pd.read_csv(dx_fdr_file)
     dx_full = pd.read_csv(dx_full_file)
+
+    # Apply cell-type name mapping to Age data if provided
+    cell_type_map = parse_cell_type_map(args.cell_type_map)
+    if cell_type_map:
+        logger.info("Applying cell-type mapping to Age data: %s", cell_type_map)
+        if "tissue" in age_fdr.columns:
+            age_fdr["tissue"] = age_fdr["tissue"].replace(cell_type_map)
+        if "tissue" in age_full.columns:
+            age_full["tissue"] = age_full["tissue"].replace(cell_type_map)
 
     # 2. Compute significant feature intersections per cell type (tissue)
     logger.info("Computing significant feature overlaps per cell type...")
