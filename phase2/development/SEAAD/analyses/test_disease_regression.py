@@ -247,6 +247,33 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # Assert power curves saved successfully
         self.assertTrue(os.path.exists(os.path.join(self.figs_dir, "dx_WLS_Power_Curve.png")))
 
+        # 8. Run compare_age_dx_effects.py (comparison utility)
+        # First, mock Age files in the same results_dir
+        import shutil
+        shutil.copy(ols_fdr_file, os.path.join(self.results_dir, f"aging_phase2.rna.all_celltypes.ols_fdr_filtered.age.csv"))
+        shutil.copy(ols_full_file, os.path.join(self.results_dir, f"aging_phase2.all_celltypes.rna.ols.age.csv"))
+        
+        # We also need to copy the dx FDR filtered file to match the expected fdr file format
+        shutil.copy(ols_fdr_file, os.path.join(self.results_dir, f"seaad_ec_multiome.rna.all_celltypes.ols_fdr_filtered.dx.csv"))
+
+        cmd_compare = [
+            sys.executable,
+            "phase2/figures/compare_age_dx_effects.py",
+            "--age-project", "aging_phase2",
+            "--age-work-dir", self.test_dir.name,
+            "--dx-project", self.project,
+            "--dx-work-dir", self.test_dir.name,
+            "--modality", "rna",
+            "--regression-type", "ols",
+            "--effect-column", "coef",
+        ]
+        res_compare = run(cmd_compare, capture_output=True, text=True)
+        self.assertEqual(res_compare.returncode, 0, f"compare_age_dx_effects failed:\n{res_compare.stderr}\n{res_compare.stdout}")
+        
+        # Assert overlap CSV and comparison plots exist
+        self.assertTrue(os.path.exists(os.path.join(self.results_dir, f"{self.project}_rna_ols_age_dx_sig_overlap.csv")))
+        self.assertTrue(os.path.exists(os.path.join(self.figs_dir, f"{self.project}.rna.ols_age_dx_similarity.coef.png")))
+
 
 if __name__ == "__main__":
     unittest.main()

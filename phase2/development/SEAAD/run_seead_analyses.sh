@@ -239,3 +239,11 @@ for MODALITY in ${MODALITIES[@]}; do
     --work-dir "$DATADIR"/public/seaad \
     --project seaad_ec_multiome
 done
+
+# compare age analysis results with dx analysis results
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/compare_age_dx_effects.py \
+    --modality ${MODALITY} \
+    --regression-type wls \
+    --effect-column coef
+done
