@@ -82,6 +82,24 @@ def main():
 
     logger.info(f"Found {len(covariates_files)} covariate files to process.")
 
+    # Pass 1: Compute total cell counts per sample per modality
+    logger.info("Computing total cell counts per sample per modality...")
+    modality_totals = {}
+    for cov_file in covariates_files:
+        parts = cov_file.name.split('.')
+        if len(parts) < 5:
+            continue
+        modality = parts[-3]
+        try:
+            covars_df = pd.read_csv(cov_file, index_col=0)
+            if weight_term in covars_df.columns:
+                if modality not in modality_totals:
+                    modality_totals[modality] = covars_df[weight_term].copy()
+                else:
+                    modality_totals[modality] = modality_totals[modality].add(covars_df[weight_term], fill_value=0)
+        except Exception as e:
+            logger.error(f"Failed to read {cov_file.name} for totals: {e}")
+
     all_results = []
 
     for cov_file in covariates_files:
@@ -106,6 +124,11 @@ def main():
             logger.warning(f"Target variable '{target_variable}' not found in {cov_file.name}. Skipping.")
             continue
 
+        # Compute percent cell counts
+        percent_term = f"percent_{weight_term}"
+        total_counts = modality_totals[modality].loc[covars_df.index]
+        covars_df[percent_term] = (covars_df[weight_term] / total_counts) * 100
+
         # Identify PCA terms, limiting to the first 4 to match target regression modeling
         pca_terms = [col for col in covars_df.columns if col.startswith("PCA_")]
         
@@ -113,36 +136,38 @@ def main():
         pca_terms = sorted(pca_terms, key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else x)
         pca_terms = pca_terms[:4]
         
-        # Build formula
         formula_covariates = [target_variable] + pca_terms
         formula_rhs = " + ".join(formula_covariates)
-        formula = f"{weight_term} ~ {formula_rhs}"
         
-        if debug:
-            logger.debug(f"Formula for {cell_type} {modality}: {formula}")
-        
-        try:
-            model = smf.ols(formula=formula, data=covars_df)
-            result = model.fit()
+        # Run regression for both raw counts and percent counts
+        for term_to_test in [weight_term, percent_term]:
+            formula = f"{term_to_test} ~ {formula_rhs}"
             
-            # Create a dataframe with all coefficients for this cell type
-            results_df = pd.DataFrame({
-                "term": result.params.index,
-                "coefficient": result.params.values,
-                "stderr": result.bse.values,
-                "t-value": result.tvalues.values,
-                "p-value": result.pvalues.values
-            })
+            if debug:
+                logger.debug(f"Formula for {cell_type} {modality}: {formula}")
             
-            # Add metadata columns
-            results_df.insert(0, "weight_term", weight_term)
-            results_df.insert(0, "modality", modality)
-            results_df.insert(0, "cell_type", cell_type)
-            
-            all_results.append(results_df)
-            
-        except Exception as e:
-            logger.error(f"Failed to run regression for {cell_type} {modality}: {e}")
+            try:
+                model = smf.ols(formula=formula, data=covars_df)
+                result = model.fit()
+                
+                # Create a dataframe with all coefficients for this cell type
+                results_df = pd.DataFrame({
+                    "term": result.params.index,
+                    "coefficient": result.params.values,
+                    "stderr": result.bse.values,
+                    "t-value": result.tvalues.values,
+                    "p-value": result.pvalues.values
+                })
+                
+                # Add metadata columns
+                results_df.insert(0, "weight_term", term_to_test)
+                results_df.insert(0, "modality", modality)
+                results_df.insert(0, "cell_type", cell_type)
+                
+                all_results.append(results_df)
+                
+            except Exception as e:
+                logger.error(f"Failed to run regression for {cell_type} {modality} ({term_to_test}): {e}")
 
     # Consolidate and save all results
     if all_results:
