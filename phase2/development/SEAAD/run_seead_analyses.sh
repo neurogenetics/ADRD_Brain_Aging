@@ -246,5 +246,5 @@ for MODALITY in ${MODALITIES[@]}; do
     --modality ${MODALITY} \
     --regression-type wls \
     --effect-column coef \
-    --cell-type-map "Astro:Astrocytes,Micro:Microglia,OPC:OPCs,Oligo:Oligodendrocytes"
+    --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo"
 done
