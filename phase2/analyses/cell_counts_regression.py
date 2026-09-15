@@ -15,7 +15,7 @@ DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Model the correlation between cell counts and age across all cell types to check for WLS weight bias."
+        description="Model the correlation between cell counts and target variable across all cell types to check for WLS weight bias."
     )
     parser.add_argument(
         "--project",
@@ -28,6 +28,12 @@ def parse_args():
         type=str,
         default=DEFAULT_WRK_DIR,
         help="Base working directory.",
+    )
+    parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary disease target variable column in covariates (default: 'age').",
     )
     parser.add_argument(
         "--weight-term",
@@ -50,7 +56,7 @@ def main():
     logs_dir = work_dir / "logs"
 
     # Configure logging to file and stdout
-    log_filename = f"{logs_dir}/{args.project}_batch_cell_counts_regression.log"
+    log_filename = f"{logs_dir}/{args.project}_batch_cell_counts_regression_{args.target_variable}.log"
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -64,6 +70,7 @@ def main():
 
     project = args.project
     weight_term = args.weight_term
+    target_variable = args.target_variable
 
     # Find all final_covariates files for the project
     search_pattern = f"{project}.*.final_covariates.csv"
@@ -95,21 +102,19 @@ def main():
             logger.warning(f"Weight term '{weight_term}' not found in {cov_file.name}. Skipping.")
             continue
             
-        if "age" not in covars_df.columns:
-            logger.warning(f"'age' not found in {cov_file.name}. Skipping.")
+        if target_variable not in covars_df.columns:
+            logger.warning(f"Target variable '{target_variable}' not found in {cov_file.name}. Skipping.")
             continue
 
-        # Identify PCA terms, limiting to the first 4 to match age regression modeling
+        # Identify PCA terms, limiting to the first 4 to match target regression modeling
         pca_terms = [col for col in covars_df.columns if col.startswith("PCA_")]
         
         # Sort to ensure stable order (e.g., PCA_0, PCA_1, PCA_2, PCA_3)
-        # Note: we use custom sorting to handle string numbers correctly if they go past 9,
-        # but standard string sort works for PCA_0 to PCA_9.
         pca_terms = sorted(pca_terms, key=lambda x: int(x.split('_')[1]) if '_' in x and x.split('_')[1].isdigit() else x)
         pca_terms = pca_terms[:4]
         
         # Build formula
-        formula_covariates = ["age"] + pca_terms
+        formula_covariates = [target_variable] + pca_terms
         formula_rhs = " + ".join(formula_covariates)
         formula = f"{weight_term} ~ {formula_rhs}"
         
@@ -142,7 +147,7 @@ def main():
     # Consolidate and save all results
     if all_results:
         final_df = pd.concat(all_results, ignore_index=True)
-        out_file = results_dir / f"{project}.all_{weight_term}_bias.csv"
+        out_file = results_dir / f"{project}.all_{weight_term}_bias.{target_variable}.csv"
         final_df.to_csv(out_file, index=False)
         logger.info(f"Successfully saved all regression results to {out_file}")
     else:

@@ -193,7 +193,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # 5. Run cell_counts_regression.py
         cmd_counts = [
             sys.executable,
-            "phase2/development/SEAAD/analyses/cell_counts_regression.py",
+            "phase2/analyses/cell_counts_regression.py",
             "--project", self.project,
             "--work-dir", self.test_dir.name,
             "--target-variable", "dx",

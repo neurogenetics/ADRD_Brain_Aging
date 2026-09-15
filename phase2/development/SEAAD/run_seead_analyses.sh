@@ -198,7 +198,8 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # since using WLS check cell-types and modalities for correlations between cell counts and age
-uv run phase2/development/SEAAD/analyses/cell_counts_regression.py
+uv run phase2/analyses/cell_counts_regression.py --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad --project seaad_ec_multiome
 
 # run the age regression analysis per cell-type
 REGRESSTYPES="wls vwrlm"
