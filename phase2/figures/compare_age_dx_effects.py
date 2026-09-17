@@ -192,6 +192,9 @@ def main():
         
         union_len = len(age_sig.union(dx_sig))
         jaccard = (len(shared_sig) / union_len) if union_len > 0 else 0.0
+        
+        dx_len = len(dx_sig)
+        pct_dx_age_associated = (len(shared_sig) / dx_len * 100) if dx_len > 0 else 0.0
 
         overlap_results.append({
             "tissue": tissue,
@@ -199,6 +202,7 @@ def main():
             "dx_significant_count": len(dx_sig),
             "shared_significant_count": len(shared_sig),
             "jaccard_similarity": round(jaccard, 4),
+            "percent_dx_features_age_associated": round(pct_dx_age_associated, 2),
         })
 
     overlap_df = pd.DataFrame(overlap_results)
