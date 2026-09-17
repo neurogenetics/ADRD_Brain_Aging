@@ -248,3 +248,17 @@ for MODALITY in ${MODALITIES[@]}; do
     --effect-column coef \
     --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo"
 done
+
+# power analysis of this study
+# min sample sizes used per modality
+uv run phase2/analyses/regression_power_analysis.py \
+  --sizes 18,9 \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome
+# max sample sized used per modality
+uv run phase2/analyses/regression_power_analysis.py \
+  --sizes 31,31 \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome

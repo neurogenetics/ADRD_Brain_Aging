@@ -231,7 +231,7 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         # Let's specify the paths explicitly using --results
         cmd_power = [
             sys.executable,
-            "phase2/development/SEAAD/analyses/regression_power_analysis.py",
+            "phase2/analyses/regression_power_analysis.py",
             "--project", self.project,
             "--work-dir", self.test_dir.name,
             "--target-variable", "dx",

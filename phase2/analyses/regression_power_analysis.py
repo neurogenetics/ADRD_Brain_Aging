@@ -45,7 +45,7 @@ def solve_min_detectable_r_squared(n, alpha, target_power, power_analysis):
     return r_squared * 100
 
 
-def plot_variance_distribution(df, label, n, var_threshold, target_power, output_dir):
+def plot_variance_distribution(df, label, n, var_threshold, target_power, output_dir, target_var):
     """Generates and saves a rank-ordered S-curve scatter plot of variance explained."""
     logger.info(f"Generating scatter plot of Variance Explained Pct for {label}...")
     df_sorted = df.sort_values("Variance_Explained_Pct", ascending=True).reset_index(
@@ -116,7 +116,7 @@ def plot_variance_distribution(df, label, n, var_threshold, target_power, output
     )
 
     ax.set_title(
-        f"Distribution of Variance Explained ($R^2$) across Age-Associated Features ({label}, N={n})",
+        f"Distribution of Variance Explained ($R^2$) across {target_var.upper()}-Associated Features ({label}, N={n})",
         fontsize=14,
         fontweight="bold",
         pad=15,
@@ -128,7 +128,7 @@ def plot_variance_distribution(df, label, n, var_threshold, target_power, output
 
     plt.tight_layout()
     dist_fig_path = os.path.join(
-        output_dir, f"{label}_variance_explained_distribution.png"
+        output_dir, f"{target_var}_{label}_variance_explained_distribution.png"
     )
 
     # Ensure output directory exists before saving
@@ -140,7 +140,7 @@ def plot_variance_distribution(df, label, n, var_threshold, target_power, output
 
 
 def process_dataset(
-    label, n, results_path, var_threshold, alpha, target_power, output_dir
+    label, n, results_path, var_threshold, alpha, target_power, output_dir, target_var
 ):
     logger.info("\n" + "=" * 65)
     logger.info(f"Dataset: {label} (N={n}, File: {results_path})")
@@ -238,12 +238,36 @@ def process_dataset(
     logger.info("-" * 50)
 
     # 4. Generate rank-ordered S-curve scatter plot
-    plot_variance_distribution(df, label, n, var_threshold, target_power, output_dir)
+    plot_variance_distribution(df, label, n, var_threshold, target_power, output_dir, target_var)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unified tool for calculating statistical power for age-based WLS regressions and comparing with empirical variance explained."
+        description="Unified tool for calculating statistical power for WLS regressions and comparing with empirical variance explained."
+    )
+    parser.add_argument(
+        "--project",
+        type=str,
+        default="aging_phase2",
+        help="Project name used for file prefixes.",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        default="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2",
+        help="Base working directory.",
+    )
+    parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary target variable (e.g. 'age', 'dx').",
+    )
+    parser.add_argument(
+        "--regression-type",
+        type=str,
+        default="wls",
+        help="Regression method used (e.g. 'wls', 'ols').",
     )
     parser.add_argument(
         "--labels",
@@ -257,8 +281,8 @@ def main():
     )
     parser.add_argument(
         "--results",
-        default="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/results/aging_phase2.all_celltypes.rna.wls_fdr.age.csv,/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/results/aging_phase2.all_celltypes.atac.wls_fdr.age.csv",
-        help="Comma-separated paths to WLS regression result files.",
+        default="",
+        help="Comma-separated paths to regression result files. If empty, automatically inferred from project/work-dir.",
     )
     parser.add_argument(
         "--target-power",
@@ -268,15 +292,25 @@ def main():
     )
     parser.add_argument(
         "--output",
-        default="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/figures/Age_WLS_Power_Curve.png",
-        help="Path to save the generated theoretical power curves comparison plot (default: 'figures/Age_WLS_Power_Curve.png')",
+        default="",
+        help="Path to save the generated theoretical power curves comparison plot. If empty, automatically inferred.",
     )
     args = parser.parse_args()
 
+    project = args.project
+    work_dir = args.work_dir
+    target_var = args.target_variable
+    reg_type = args.regression_type
+
+    # Automatically infer output path if not provided
+    output_path = args.output
+    if not output_path:
+        output_path = os.path.join(work_dir, "figures", f"{project}_{target_var}_{reg_type}_Power_Curve.png")
+
     # Set up logging
-    output_dir = os.path.dirname(args.output) or "."
+    output_dir = os.path.dirname(output_path) or "."
     os.makedirs(output_dir, exist_ok=True)
-    log_file_path = os.path.join(output_dir, "regression_power_analysis.log")
+    log_file_path = os.path.join(output_dir, f"{project}_{target_var}_regression_power_analysis.log")
 
     logging.basicConfig(
         level=logging.INFO,
@@ -287,27 +321,33 @@ def main():
         ]
     )
 
-    logger.info("=" * 65)
-    logger.info("Executing regression_power_analysis.py with the following arguments:")
-    logger.info(f"  --labels:       {args.labels}")
-    logger.info(f"  --sizes:        {args.sizes}")
-    logger.info(f"  --results:      {args.results}")
-    logger.info(f"  --target-power: {args.target_power}")
-    logger.info(f"  --output:       {args.output}")
-    logger.info("=" * 65 + "\n")
-
     # Parse comma-separated inputs
     labels = [x.strip() for x in args.labels.split(",")]
     sizes = [int(x.strip()) for x in args.sizes.split(",")]
 
-    if not args.results:
-        logger.info(
-            "Please provide at least one result file using the --results argument."
-        )
-        return
+    # Automatically infer result paths if not provided
+    results_paths_str = args.results
+    if not results_paths_str:
+        inferred_paths = []
+        for label in labels:
+            modality = label.lower()
+            inferred = os.path.join(work_dir, "results", f"{project}.all_celltypes.{modality}.{reg_type}_fdr.{target_var}.csv")
+            inferred_paths.append(inferred)
+        results_paths = inferred_paths
+        results_paths_str = ",".join(inferred_paths)
+    else:
+        results_paths = [x.strip() for x in args.results.split(",")]
 
-    results_paths = [x.strip() for x in args.results.split(",")]
-    target_power = args.target_power
+    logger.info("=" * 65)
+    logger.info("Executing regression_power_analysis.py with the following arguments:")
+    logger.info(f"  --project:         {project}")
+    logger.info(f"  --target-variable: {target_var}")
+    logger.info(f"  --labels:          {args.labels}")
+    logger.info(f"  --sizes:           {args.sizes}")
+    logger.info(f"  --results:         {results_paths_str}")
+    logger.info(f"  --target-power:    {args.target_power}")
+    logger.info(f"  --output:          {output_path}")
+    logger.info("=" * 65 + "\n")
 
     if not (len(labels) == len(sizes) == len(results_paths)):
         raise ValueError(
@@ -329,13 +369,13 @@ def main():
     # Step 2: Solve for the theoretical minimum detectable R^2 for each dataset
     logger.info("\n" + "=" * 65)
     logger.info(
-        f"Step 2: Solving for minimum detectable R^2 at {int(target_power * 100)}% power..."
+        f"Step 2: Solving for minimum detectable R^2 at {int(args.target_power * 100)}% power..."
     )
     logger.info("=" * 65)
     var_thresholds = []
     for label, n, alpha in zip(labels, sizes, alphas):
         min_r2_pct = solve_min_detectable_r_squared(
-            n, alpha, target_power, power_analysis
+            n, alpha, args.target_power, power_analysis
         )
         var_thresholds.append(min_r2_pct)
         logger.info(f"  -> {label} minimum detectable R^2: {min_r2_pct:.2f}%")
@@ -349,7 +389,7 @@ def main():
     for label, n, path, threshold, alpha in zip(
         labels, sizes, results_paths, var_thresholds, alphas
     ):
-        process_dataset(label, n, path, threshold, alpha, target_power, output_dir)
+        process_dataset(label, n, path, threshold, alpha, args.target_power, output_dir, target_var)
 
     # Step 4: Theoretical Power Curves comparison plot
     logger.info("=" * 65)
@@ -381,13 +421,13 @@ def main():
 
     # Formatting the plot
     ax.axhline(
-        y=target_power,
+        y=args.target_power,
         color="r",
         linestyle="--",
-        label=f"{int(target_power * 100)}% Power Threshold",
+        label=f"{int(args.target_power * 100)}% Power Threshold",
     )
     ax.set_title(
-        "Power to Detect Age Associations by Variance Explained ($R^2$)",
+        f"Power to Detect {target_var.upper()} Associations by Variance Explained ($R^2$)",
         fontsize=14,
         fontweight="bold",
         pad=15,
@@ -401,9 +441,9 @@ def main():
 
     # Save the comparison plot
     os.makedirs(output_dir, exist_ok=True)
-    fig.savefig(args.output, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    logger.info(f"\nTheoretical comparison power curve plot saved to: {args.output}")
+    logger.info(f"\nTheoretical comparison power curve plot saved to: {output_path}")
 
 
 if __name__ == "__main__":
