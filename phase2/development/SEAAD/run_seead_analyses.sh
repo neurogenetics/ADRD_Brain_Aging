@@ -194,7 +194,7 @@ done
 
 # run the variance partition analyis per cell-type
 for MODALITY in ${MODALITIES[@]}; do
-  phase2/development/SEAAD/run_prep_pb_jobs.sh run_variance_partition.py ${MODALITY}
+  phase2/development/SEAAD/run_var_part_jobs.sh run_variance_partition.py ${MODALITY}
 done
 
 # since using WLS check cell-types and modalities for correlations between cell counts and age

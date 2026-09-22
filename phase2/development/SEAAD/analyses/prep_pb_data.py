@@ -90,6 +90,12 @@ def parse_args():
         default=0.10,
         help="Fraction of top variable features to analyze (default: 0.10).",
     )
+    parser.add_argument(
+        "--features-file",
+        type=str,
+        default=None,
+        help="Optional path to an autosomal features file to override the default constructed path.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -228,11 +234,16 @@ def generate_latent_features(
     top_var_fraction: float,
     imputer_type: str,
     debug: bool,
+    features_file_override: str = None,
 ) -> pd.DataFrame:
     logger.info("Begin modeling non-target variance in the data")
 
     # Filter autosomal features
-    features_file = quants_dir / f"{project}.features.csv"
+    if features_file_override is not None:
+        features_file = Path(features_file_override)
+    else:
+        features_file = quants_dir / f"{project}.features.csv"
+
     if features_file.exists():
         autosomal_genes = load_autosomal_features(features_file, debug)
         candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
@@ -366,6 +377,7 @@ def main():
         args.top_var_fraction,
         args.imputer_type,
         debug,
+        features_file_override=args.features_file,
     )
 
     # Merge covariates with PCA components

@@ -83,6 +83,13 @@ def parse_args():
         nargs="+",
         help="List of specific covariate names to use when --covariates specified is selected.",
     )
+    parser.add_argument(
+        "--only-autosomal",
+        type=str,
+        default=None,
+        metavar="FEATURES_FILE",
+        help="Path to a features CSV file to restrict the regression to autosomal features only.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -117,6 +124,16 @@ def load_quants(
         logger.info(f"Loaded quants data file: {data_file}")
         print(quants_df.head())
     return quants_df
+
+
+def load_autosomal_features(features_file: Path, debug: bool = False) -> list[str]:
+    logger.info("Loading features from %s", features_file)
+    features_df = read_csv(features_file)
+    autosomes = [f"chr{i}" for i in range(1, 23)]
+    autosomal_df = features_df[features_df["chr"].isin(autosomes)]
+    if debug:
+        logger.debug("Autosomal features shape: %s", autosomal_df.shape)
+    return autosomal_df["gene"].tolist()
 
 
 def regression_model(
@@ -383,6 +400,20 @@ def main():
 
     # Load quants (clean data)
     quants_df = load_quants(quants_dir, project, cell_type, modality, debug)
+
+    if args.only_autosomal:
+        features_file = Path(args.only_autosomal)
+        if not features_file.exists():
+            logger.error("Provided features file does not exist: %s", features_file)
+            sys.exit(1)
+        
+        autosomal_genes = load_autosomal_features(features_file, debug)
+        candidate_features = quants_df.columns.intersection(autosomal_genes).tolist()
+        logger.info(
+            "Restricted to %d autosomal features present in data",
+            len(candidate_features),
+        )
+        quants_df = quants_df[candidate_features]
 
     # Run regression
     regress_target(

@@ -9,6 +9,9 @@ uv run phase2/analyses/format_covariates.py --exclude-ids Aging134
 # pseudobulk convert the modalities and save per cell-type
 uv run phase2/analyses/pseudobulk_convert.py --aggregate-type sum --exclude-ids Aging134
 
+# save project feature set to csv file
+uv run phase2/quantifications/extract_features_from_anndata.py
+
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do

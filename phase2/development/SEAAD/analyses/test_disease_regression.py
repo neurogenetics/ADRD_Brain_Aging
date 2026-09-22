@@ -285,6 +285,46 @@ class TestDiseaseRegressionPipeline(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.results_dir, f"{self.project}_rna_ols_age_dx_sig_overlap.csv")))
         self.assertTrue(os.path.exists(os.path.join(self.figs_dir, f"{self.project}.rna.ols_age_dx_similarity.coef.png")))
 
+    def test_disease_regression_with_only_autosomal(self):
+        # 1. Create custom features file to mock autosomes
+        override_features_file = os.path.join(self.test_dir.name, "custom_features.csv")
+        override_df = pd.DataFrame({
+            "chr": ["chr1", "chr2", "chrX"],
+            "gene": ["gene_0", "gene_1", "gene_9"] # gene_9 is on X (not an autosome), gene_0 & gene_1 are autosomal
+        })
+        override_df.to_csv(override_features_file, index=False)
+
+        # 2. Run pseudobulk_regression.py for Neuron with --only-autosomal
+        cmd_reg = [
+            sys.executable,
+            "phase2/development/SEAAD/analyses/pseudobulk_regression.py",
+            "--project", self.project,
+            "--work-dir", self.test_dir.name,
+            "--modality", "rna",
+            "--cell-type", "Neuron",
+            "--target-variable", "dx",
+            "--regression-type", "ols",
+            "--only-autosomal", override_features_file,
+            "--debug"
+        ]
+        res_reg = run(cmd_reg, capture_output=True, text=True)
+        self.assertEqual(res_reg.returncode, 0, f"pseudobulk_regression failed with --only-autosomal:\n{res_reg.stderr}\n{res_reg.stdout}")
+
+        # Assert output OLS file exists for Neuron
+        out_file = os.path.join(self.results_dir, f"{self.project}.rna.Neuron.ols.dx.csv")
+        self.assertTrue(os.path.exists(out_file))
+
+        # Check results file content to confirm only gene_0 and gene_1 were regressed
+        results_df = pd.read_csv(out_file)
+        self.assertEqual(len(results_df), 2, f"Expected 2 features, found {len(results_df)}")
+        self.assertIn("gene_0", results_df["feature"].values)
+        self.assertIn("gene_1", results_df["feature"].values)
+        self.assertNotIn("gene_9", results_df["feature"].values)
+
+        # Search stdout/stderr for the restriction message indicating 2 autosomal features
+        output_text = res_reg.stdout + "\n" + res_reg.stderr
+        self.assertIn("Restricted to 2 autosomal features present in data", output_text)
+
 
 if __name__ == "__main__":
     unittest.main()

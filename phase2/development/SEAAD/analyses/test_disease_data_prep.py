@@ -201,6 +201,52 @@ class TestDiseaseDataPrep(unittest.TestCase):
         self.assertIn("donor_1", residuals_df.index)
         self.assertNotIn("donor_3", residuals_df.index)
 
+    def test_pipeline_data_prep_with_features_override(self):
+        # 1. Run format_covariates.py
+        cmd_format = [
+            sys.executable,
+            "phase2/development/SEAAD/analyses/format_covariates.py",
+            "-i", self.mdata_path,
+            "--project", "test_project",
+            "--work-dir", self.test_dir.name,
+            "--cell-type-col", "broad_cell_type",
+            "--sample-col", "sample_id",
+        ]
+        res_format = run(cmd_format, capture_output=True, text=True)
+        self.assertEqual(res_format.returncode, 0, f"format_covariates failed:\n{res_format.stderr}\n{res_format.stdout}")
+
+        # 2. Create custom features file to override with
+        override_features_file = os.path.join(self.test_dir.name, "custom_features.csv")
+        override_df = pd.DataFrame({
+            "chr": ["chr1", "chr2", "chrX"],
+            "gene": ["gene_0", "gene_1", "gene_9"] # gene_9 is on X (not an autosome), gene_0 & gene_1 are autosomal
+        })
+        override_df.to_csv(override_features_file, index=False)
+
+        # 3. Run prep_pb_data.py for Neuron cell type with --features-file override
+        cmd_prep = [
+            sys.executable,
+            "phase2/development/SEAAD/analyses/prep_pb_data.py",
+            "--project", "test_project",
+            "--work-dir", self.test_dir.name,
+            "--modality", "rna",
+            "--cell-type", "Neuron",
+            "--target-variable", "dx",
+            "--top-var-fraction", "0.50",
+            "--features-file", override_features_file,
+            "--debug"
+        ]
+        res_prep = run(cmd_prep, capture_output=True, text=True)
+        self.assertEqual(res_prep.returncode, 0, f"prep_pb_data failed with features override:\n{res_prep.stderr}\n{res_prep.stdout}")
+
+        # Search stdout/stderr for the restriction message indicating 2 autosomal features (gene_0 and gene_1)
+        output_text = res_prep.stdout + "\n" + res_prep.stderr
+        self.assertIn("Restricted to 2 autosomal features present in data", output_text)
+
+        # Verify final_covariates is created
+        final_covar_file = os.path.join(self.info_dir, "test_project.Neuron.rna.final_covariates.csv")
+        self.assertTrue(os.path.exists(final_covar_file))
+
 
 if __name__ == "__main__":
     unittest.main()
