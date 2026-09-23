@@ -20,6 +20,12 @@ def parse_args():
     )
     parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
+    parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary disease target variable column in covariates (default: 'age').",
+    )
     parser.add_argument("--endo-modality", type=str, default="rna")
     parser.add_argument("--exog-modality", type=str, default="atac")
     parser.add_argument(
@@ -31,7 +37,7 @@ def parse_args():
         "--alpha",
         type=float,
         default=0.05,
-        help="Alpha threshold for mediation (uncorrected p-value of age exposure)",
+        help="Alpha threshold for mediation (uncorrected p-value of exposure)",
     )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
@@ -50,7 +56,7 @@ def main():
 
     log_filename = (
         logs_dir
-        / f"{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_conditioned_summary.log"
+        / f"{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}_conditioned_summary.log"
     )
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
@@ -63,12 +69,21 @@ def main():
     # Input files
     endo_fdr_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
+        / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
     )
+
+    # Try target-variable specific conditioned results, then legacy
     cond_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.{args.target_variable}.csv"
     )
+    if not cond_file.exists():
+        legacy_cond_file = (
+            results_dir
+            / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.csv"
+        )
+        if legacy_cond_file.exists():
+            cond_file = legacy_cond_file
 
     for f in [endo_fdr_file, cond_file]:
         if not f.exists():
@@ -79,7 +94,7 @@ def main():
     endo_df = pd.read_csv(endo_fdr_file)
     cond_df = pd.read_csv(cond_file)
 
-    logger.info(f"Loaded {len(endo_df)} endo age-associated features.")
+    logger.info(f"Loaded {len(endo_df)} endo {args.target_variable}-associated features.")
     logger.info(f"Loaded {len(cond_df)} conditioned pairs.")
 
     summary_rows = []
@@ -94,7 +109,7 @@ def main():
             this_cond = tissue_cond[tissue_cond["endo_feature"] == gene]
             cis_cor_age_peaks = this_cond.shape[0]
 
-            # Mediated if conditioned exposure p-value > alpha (loss of significance for age)
+            # Mediated if conditioned exposure p-value > alpha (loss of significance for exposure)
             mediated = this_cond[this_cond["exposure_pval"] > args.alpha]
             mediating_peak_count = mediated.shape[0]
 
@@ -135,7 +150,7 @@ def main():
     # Save summary table
     out_summary_file = (
         figures_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.age.summary.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.{args.target_variable}.summary.csv"
     )
     mediated_proportions.to_csv(out_summary_file, index=False)
     logger.info(f"Saved summary proportions table to {out_summary_file}")
@@ -144,22 +159,22 @@ def main():
     )
 
     # File prefixes for figures
+    suffix = f"_{args.target_variable}" if args.target_variable != "age" else ""
     fig_bar = (
         figures_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_bar"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_bar{suffix}"
     )
     fig_dist = (
         figures_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_dist"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_dist{suffix}"
     )
     fig_cnt = (
         figures_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_cnt"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_cnt{suffix}"
     )
 
     sns.set_theme(style="whitegrid")
 
-    # 1. Bar Plot
     # 1. Bar Plot
     logger.info("Generating bar plot...")
     plt.figure(figsize=(15, 11), dpi=100)
@@ -175,7 +190,7 @@ def main():
     plt.yticks(fontsize=14, weight="bold")
     plt.tight_layout()
     plt.title(
-        "% of age associated genes that are attenuated by a cis correlated age associated ATAC peak",
+        f"% of {args.target_variable} associated genes that are attenuated by a cis correlated {args.target_variable} associated ATAC peak",
         fontsize=24,
         weight="bold",
     )
@@ -266,7 +281,7 @@ def main():
         )
         plt.xticks(rotation=90)
         plt.title(
-            "Mean distances between cis proximal peaks that mediate age effects",
+            f"Mean distances between cis proximal peaks that mediate {args.target_variable} effects",
             fontsize="large",
         )
         plt.xlabel("Cell types")
@@ -322,7 +337,7 @@ def main():
         plt.ylim(bottom=0)
         plt.xticks(rotation=90)
         plt.title(
-            "Number of cis proximal peaks that mediate age effects", fontsize="large"
+            f"Number of cis proximal peaks that mediate {args.target_variable} effects", fontsize="large"
         )
         plt.xlabel("Cell types")
         plt.ylabel("Number mediating cis proximal ATAC")

@@ -19,6 +19,12 @@ def parse_args():
     )
     parser.add_argument("--project", type=str, default=DEFAULT_PROJECT)
     parser.add_argument("--work-dir", type=str, default=DEFAULT_WRK_DIR)
+    parser.add_argument(
+        "--target-variable",
+        type=str,
+        default="age",
+        help="The primary disease target variable column in covariates (default: 'age').",
+    )
     parser.add_argument("--endo-modality", type=str, default="rna")
     parser.add_argument("--exog-modality", type=str, default="atac")
     parser.add_argument(
@@ -45,7 +51,7 @@ def main():
     figs_dir = work_dir / "figures"
     logs_dir = work_dir / "logs"
 
-    log_filename = f"{logs_dir}/{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_cis_summary_plot.log"
+    log_filename = f"{logs_dir}/{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}_cis_summary_plot.log"
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -55,16 +61,25 @@ def main():
 
     endo_results_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
+        / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
     )
     exog_results_file = (
         results_dir
-        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.age.csv"
+        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
     )
+
+    # Try target-variable specific cis results file, then legacy file format
     cis_results_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.{args.target_variable}.cis.csv"
     )
+    if not cis_results_file.exists():
+        legacy_cis_file = (
+            results_dir
+            / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.csv"
+        )
+        if legacy_cis_file.exists():
+            cis_results_file = legacy_cis_file
 
     for f in [endo_results_file, exog_results_file, cis_results_file]:
         if not f.exists():
@@ -82,13 +97,13 @@ def main():
 
     logger.info(f"Loading cis results from {cis_results_file}")
     results_df = pd.read_csv(cis_results_file)
-    # restrict results to just age associated features
+    # restrict results to just target_variable associated features
     results_df = results_df[
         (results_df["endo_feature"].isin(endo_results["feature"]))
         & (results_df["exog_feature"].isin(exog_results["feature"]))
     ]
 
-    # recompute the B&H FDR for just the age associated results
+    # recompute the B&H FDR for just the target_variable associated results
     results_df["bh_fdr"] = compute_fdr(results_df["p-value"].fillna(1))
     sig_results_df = results_df[results_df["bh_fdr"] < args.fdr_threshold]
 
@@ -102,7 +117,7 @@ def main():
     for cell_type in sorted(cell_types):
         ct_sig = sig_results_df[sig_results_df["tissue"] == cell_type]
 
-        # For the denominator, use the number of age-associated features for this specific tissue that were actually tested for cis-correlation
+        # For the denominator, use the number of target_variable-associated features for this specific tissue that were actually tested for cis-correlation
         tested_df = results_df[results_df["tissue"] == cell_type]
         tested_endo = tested_df["endo_feature"].nunique()
         tested_exog = tested_df["exog_feature"].nunique()
@@ -149,9 +164,11 @@ def main():
     plot_df = pd.DataFrame(plot_rows)
 
     figs_dir.mkdir(parents=True, exist_ok=True)
+    
+    suffix = f"_{args.target_variable}" if args.target_variable != "age" else ""
     fig_file = (
         figs_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary.png"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary{suffix}.png"
     )
 
     logger.info("Generating plot...")
