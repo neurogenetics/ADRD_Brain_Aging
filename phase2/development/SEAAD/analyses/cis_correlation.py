@@ -50,6 +50,12 @@ def parse_args():
     parser.add_argument("--exog-modality", type=str, default="atac")
     parser.add_argument("--max-dist", type=int, default=1_000_000)
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
+    parser.add_argument(
+        "--features-file",
+        type=str,
+        default=None,
+        help="Optional path to an autosomal features file to override the default constructed path.",
+    )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -296,7 +302,10 @@ def main():
     logger.info(f"Command line: {' '.join(sys.argv)}")
 
     # Load features
-    features_file = quants_dir / f"{args.project}.features.csv"
+    if args.features_file is not None:
+        features_file = Path(args.features_file)
+    else:
+        features_file = quants_dir / f"{args.project}.features.csv"
     logger.info(f"Loading features from {features_file}")
     features_df = read_csv(features_file, index_col=0)
 

@@ -34,8 +34,44 @@ def parse_args():
         choices=["ols", "rlm", "glm", "glm_tweedie", "wls", "vwrlm"],
     )
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
+    parser.add_argument(
+        "--output-suffix",
+        type=str,
+        default=None,
+        help="Optional suffix to append to the output filename.",
+    )
+    parser.add_argument(
+        "--cell-type-map",
+        type=str,
+        default=None,
+        help="Comma-separated mapping of cell-type names for display, format: 'Source1:Target1,Source2:Target2'",
+    )
+    parser.add_argument(
+        "--plot-title",
+        type=str,
+        default=None,
+        help="Optional custom title for the summary plot.",
+    )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
+
+
+def parse_cell_type_map(map_str: str) -> dict:
+    """
+    Parse a comma-separated mapping string into a dictionary.
+    Format: 'Source1:Target1,Source2:Target2'
+    """
+    if not map_str:
+        return {}
+    mapping = {}
+    for item in map_str.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            k, v = item.split(":", 1)
+            mapping[k.strip()] = v.strip()
+    return mapping
 
 
 def compute_fdr(pvalues):
@@ -51,7 +87,8 @@ def main():
     figs_dir = work_dir / "figures"
     logs_dir = work_dir / "logs"
 
-    log_filename = f"{logs_dir}/{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}_cis_summary_plot.log"
+    suffix_log = f"_{args.output_suffix}" if args.output_suffix else ""
+    log_filename = f"{logs_dir}/{args.project}_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}{suffix_log}_cis_summary_plot.log"
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -63,23 +100,43 @@ def main():
         results_dir
         / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
     )
-    exog_results_file = (
-        results_dir
-        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
-    )
 
-    # Try target-variable specific cis results file, then legacy file format
-    cis_results_file = (
+    # Resolve exog results file flexibly across possible naming conventions
+    exog_candidates = [
+        results_dir / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv",
+        results_dir / f"{args.project}.all_celltypes.{args.exog_modality}.{args.regression_type}.{args.target_variable}.csv",
+        results_dir / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}.{args.target_variable}.csv",
+    ]
+    exog_results_file = None
+    for cand in exog_candidates:
+        if cand.exists():
+            exog_results_file = cand
+            break
+    if exog_results_file is None:
+        exog_results_file = exog_candidates[0]
+
+    # Resolve cis results file with optional output suffix and fallbacks
+    cis_candidates = []
+    if args.output_suffix:
+        cis_candidates.append(
+            results_dir
+            / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.{args.target_variable}.{args.output_suffix}.cis.csv"
+        )
+    cis_candidates.append(
         results_dir
         / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.{args.target_variable}.cis.csv"
     )
-    if not cis_results_file.exists():
-        legacy_cis_file = (
-            results_dir
-            / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.csv"
-        )
-        if legacy_cis_file.exists():
-            cis_results_file = legacy_cis_file
+    cis_candidates.append(
+        results_dir
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.cis.csv"
+    )
+    cis_results_file = None
+    for cand in cis_candidates:
+        if cand.exists():
+            cis_results_file = cand
+            break
+    if cis_results_file is None:
+        cis_results_file = cis_candidates[0]
 
     for f in [endo_results_file, exog_results_file, cis_results_file]:
         if not f.exists():
@@ -92,8 +149,8 @@ def main():
 
     logger.info(f"Loading exog results from {exog_results_file}")
     exog_results = pd.read_csv(exog_results_file)
-    # the exog file is not fdr filtered directly in the cis_correlation.py script usually
-    exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
+    if "fdr_bh" in exog_results.columns:
+        exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
 
     logger.info(f"Loading cis results from {cis_results_file}")
     results_df = pd.read_csv(cis_results_file)
@@ -157,15 +214,28 @@ def main():
         )
 
     summary_df = pd.DataFrame(summary_rows)
+
+    plot_df = pd.DataFrame(plot_rows)
+
+    cell_type_map = parse_cell_type_map(args.cell_type_map)
+    if cell_type_map:
+        logger.info(f"Applying cell-type mapping for display: {cell_type_map}")
+        plot_df["Cell Type"] = plot_df["Cell Type"].replace(cell_type_map)
+        summary_df["Cell Type"] = summary_df["Cell Type"].replace(cell_type_map)
+
     logger.info(
         f"Cis-Correlation Summary (FDR <= 0.05):\n{summary_df.to_string(index=False)}"
     )
 
-    plot_df = pd.DataFrame(plot_rows)
-
     figs_dir.mkdir(parents=True, exist_ok=True)
     
-    suffix = f"_{args.target_variable}" if args.target_variable != "age" else ""
+    suffix_parts = []
+    if args.target_variable != "age":
+        suffix_parts.append(args.target_variable)
+    if args.output_suffix:
+        suffix_parts.append(args.output_suffix)
+    suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
+
     fig_file = (
         figs_dir
         / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.cis_summary{suffix}.png"
@@ -187,6 +257,8 @@ def main():
     plt.legend(
         title="Modality", bbox_to_anchor=(1.02, 0.5), loc="center left", borderaxespad=0
     )
+    if args.plot_title:
+        plt.title(args.plot_title, fontsize=14, weight="bold")
 
     plt.tight_layout()
     plt.savefig(fig_file, dpi=300)

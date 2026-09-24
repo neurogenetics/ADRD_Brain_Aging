@@ -264,12 +264,46 @@ uv run phase2/analyses/regression_power_analysis.py \
   --project seaad_ec_multiome
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene, using rna covariates
-uv run phase2/development/SEAAD/analyses/cis_correlation.py --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3
+uv run phase2/development/SEAAD/analyses/cis_correlation.py \
+  --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome \
+  --features-file "$DATADIR"/quants/aging_phase2.features.csv
 
 # generate summary figure for the cis correlation analysis but for just the age associated features in both modalities
-uv run phase2/figures/cis_correlation_summary.py
+uv run phase2/figures/cis_correlation_summary.py \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a conditioned analysis of these pairs, using rna covariates
-uv run phase2/development/SEAAD/analyses/cis_conditioned_regression.py --endo-covariates specified --endo-covariates-list PCA_0 PCA_1 PCA_2 PCA_3
+uv run phase2/development/SEAAD/analyses/cis_conditioned_regression.py \
+  --endo-covariates specified --endo-covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome
+
 # summarize and visualize the cis conditioned regression analysis results
-uv run phase2/figures/cis_conditioned_regression_summary.py
+uv run phase2/figures/cis_conditioned_regression_summary.py \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome
+
+# for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a conditioned analysis of these pairs, using rna covariates
+uv run phase2/development/SEAAD/analyses/cis_conditioned_regression.py \
+  --endo-covariates specified --endo-covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome \
+  --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
+  --output-suffix dxage \
+  --exog-features-file "$DATADIR"/results/aging_phase2.atac.all_celltypes.wls_fdr_filtered.age.csv
+
+# summarize and visualize the cis conditioned regression analysis results
+uv run phase2/figures/cis_conditioned_regression_summary.py \
+  --target-variable dx \
+  --work-dir "$DATADIR"/public/seaad \
+  --project seaad_ec_multiome \
+  --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
+  --output-suffix dxage

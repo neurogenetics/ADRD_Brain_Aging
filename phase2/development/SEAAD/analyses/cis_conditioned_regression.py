@@ -51,10 +51,112 @@ def parse_args():
     parser.add_argument("--endo-covariates-list", type=str, nargs="+")
     parser.add_argument("--endo-weight-term", type=str, default="cell_counts")
 
+    parser.add_argument(
+        "--exog-features-file",
+        "--exog-file",
+        type=str,
+        default=None,
+        help="Optional path to a file containing cell-type and feature per line to limit exogenous features (acts as an alternative to exog_results_file).",
+    )
+    parser.add_argument(
+        "--cell-type-map",
+        type=str,
+        default=None,
+        help="Comma-separated mapping of cell-type names (e.g. from exogenous file to dataset names), format: 'Source1:Target1,Source2:Target2'",
+    )
+    parser.add_argument(
+        "--output-suffix",
+        type=str,
+        default=None,
+        help="Optional suffix to append to the output filename for secondary runs.",
+    )
+
     parser.add_argument("--fdr-threshold", type=float, default=0.05)
     parser.add_argument("--debug", action="store_true")
 
     return parser.parse_args()
+
+
+def parse_cell_type_map(map_str: str) -> dict:
+    """
+    Parse a comma-separated mapping string into a dictionary.
+    Format: 'Source1:Target1,Source2:Target2'
+    """
+    if not map_str:
+        return {}
+    mapping = {}
+    for item in map_str.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            k, v = item.split(":", 1)
+            mapping[k.strip()] = v.strip()
+    return mapping
+
+
+def load_exog_limit_features(file_path: Path) -> pd.DataFrame:
+    """
+    Load a file containing cell-type and exogenous feature per line.
+    Supports CSV, TSV, whitespace-delimited files, with or without headers.
+    Returns a DataFrame with columns ['tissue', 'feature'].
+    """
+    logger.info(f"Loading exogenous limiting features from {file_path}")
+
+    try:
+        df = pd.read_csv(file_path, sep=None, engine="python")
+    except Exception:
+        df = pd.read_csv(file_path, sep=r"\s+")
+
+    col_map = {
+        str(c).lower().strip().replace("-", "_").replace(" ", "_"): c
+        for c in df.columns
+    }
+
+    tissue_col = None
+    for cand in ["tissue", "cell_type", "celltype", "cell", "cell_name"]:
+        if cand in col_map:
+            tissue_col = col_map[cand]
+            break
+
+    feat_col = None
+    for cand in ["feature", "exog_feature", "peak", "gene", "peak_id", "feature_id"]:
+        if cand in col_map:
+            feat_col = col_map[cand]
+            break
+
+    if tissue_col and feat_col:
+        exog_df = df[[tissue_col, feat_col]].rename(
+            columns={tissue_col: "tissue", feat_col: "feature"}
+        )
+    else:
+        # Fall back to reading headerless
+        try:
+            df_no_header = pd.read_csv(file_path, sep=None, engine="python", header=None)
+        except Exception:
+            df_no_header = pd.read_csv(file_path, sep=r"\s+", header=None)
+
+        if df_no_header.shape[1] < 2:
+            raise ValueError(
+                f"Exogenous features file {file_path} must have at least 2 columns (cell-type and feature)."
+            )
+
+        first_row_c0 = str(df_no_header.iloc[0, 0]).lower().strip()
+        first_row_c1 = str(df_no_header.iloc[0, 1]).lower().strip()
+        if (
+            any(w in first_row_c0 for w in ["cell", "tissue"])
+            and any(w in first_row_c1 for w in ["feat", "peak", "gene"])
+        ):
+            exog_df = df_no_header.iloc[1:, :2].copy()
+        else:
+            exog_df = df_no_header.iloc[:, :2].copy()
+
+        exog_df.columns = ["tissue", "feature"]
+
+    exog_df["tissue"] = exog_df["tissue"].astype(str).str.strip()
+    exog_df["feature"] = exog_df["feature"].astype(str).str.strip()
+    exog_df = exog_df.dropna(subset=["tissue", "feature"]).drop_duplicates()
+    return exog_df
 
 
 def run_single_conditioned_regression(
@@ -253,7 +355,8 @@ def main():
     results_dir = work_dir / "results"
     logs_dir = work_dir / "logs"
 
-    log_filename = f"{logs_dir}/all_celltypes_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}_conditioned_regression.log"
+    suffix_log = f"_{args.output_suffix}" if args.output_suffix else ""
+    log_filename = f"{logs_dir}/all_celltypes_{args.endo_modality}_{args.exog_modality}_{args.regression_type}_{args.target_variable}{suffix_log}_conditioned_regression.log"
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -267,16 +370,22 @@ def main():
         results_dir
         / f"{args.project}.{args.endo_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
     )
-    exog_results_file = (
-        results_dir
-        / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
-    )
     cis_results_file = (
         results_dir
         / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.{args.target_variable}.cis.csv"
     )
 
-    for f in [endo_results_file, exog_results_file, cis_results_file]:
+    if args.exog_features_file is not None:
+        exog_file = Path(args.exog_features_file)
+        using_exog_limit_file = True
+    else:
+        exog_file = (
+            results_dir
+            / f"{args.project}.{args.exog_modality}.all_celltypes.{args.regression_type}_fdr_filtered.{args.target_variable}.csv"
+        )
+        using_exog_limit_file = False
+
+    for f in [endo_results_file, exog_file, cis_results_file]:
         if not f.exists():
             logger.error(f"Required file not found: {f}")
             sys.exit(1)
@@ -285,18 +394,62 @@ def main():
     endo_results = pd.read_csv(endo_results_file)
     endo_results = endo_results[endo_results["fdr_bh"] < args.fdr_threshold]
 
-    logger.info(f"Loading exog results from {exog_results_file}")
-    exog_results = pd.read_csv(exog_results_file)
-    exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
+    if using_exog_limit_file:
+        exog_limit_df = load_exog_limit_features(exog_file)
+        cell_type_map = parse_cell_type_map(args.cell_type_map)
+        if cell_type_map:
+            logger.info(f"Applying cell-type mapping to exogenous features: {cell_type_map}")
+            exog_limit_df["tissue"] = exog_limit_df["tissue"].replace(cell_type_map)
+
+        logger.info(
+            f"Loaded {len(exog_limit_df)} exogenous feature limits across "
+            f"{exog_limit_df['tissue'].nunique()} cell types from {exog_file}"
+        )
+    else:
+        logger.info(f"Loading exog results from {exog_file}")
+        exog_results = pd.read_csv(exog_file)
+        exog_results = exog_results[exog_results["fdr_bh"] < args.fdr_threshold]
+        cell_type_map = parse_cell_type_map(args.cell_type_map)
+        if cell_type_map and "tissue" in exog_results.columns:
+            logger.info(f"Applying cell-type mapping to exog results: {cell_type_map}")
+            exog_results["tissue"] = exog_results["tissue"].replace(cell_type_map)
 
     logger.info(f"Loading cis results from {cis_results_file}")
     results_df = pd.read_csv(cis_results_file)
 
-    # Restrict results to just target-variable associated features in both modalities
-    results_df = results_df[
-        (results_df["endo_feature"].isin(endo_results["feature"]))
-        & (results_df["exog_feature"].isin(exog_results["feature"]))
-    ]
+    if using_exog_limit_file:
+        matching_types = set(results_df["tissue"]).intersection(set(exog_limit_df["tissue"]))
+        logger.info(f"Cell types in common between cis results and exogenous limits: {sorted(matching_types)}")
+        if not matching_types:
+            logger.warning(
+                f"No overlapping cell types found between cis results ({sorted(results_df['tissue'].unique())}) "
+                f"and exogenous limits ({sorted(exog_limit_df['tissue'].unique())}). Check --cell-type-map."
+            )
+
+    # Restrict results to just target-variable associated features in both modalities (or exog limits)
+    if using_exog_limit_file:
+        limit_pairs = set(zip(exog_limit_df["tissue"], exog_limit_df["feature"]))
+        norm_limit_pairs = set()
+        for t, f in limit_pairs:
+            norm_limit_pairs.add((t, f))
+            norm_limit_pairs.add((t.replace(" ", "_"), f))
+            norm_limit_pairs.add((t.replace("_", " "), f))
+
+        in_exog_limit = [
+            (t, f) in norm_limit_pairs
+            or (t.replace(" ", "_"), f) in norm_limit_pairs
+            or (t.replace("_", " "), f) in norm_limit_pairs
+            for t, f in zip(results_df["tissue"], results_df["exog_feature"])
+        ]
+        results_df = results_df[
+            (results_df["endo_feature"].isin(endo_results["feature"]))
+            & in_exog_limit
+        ]
+    else:
+        results_df = results_df[
+            (results_df["endo_feature"].isin(endo_results["feature"]))
+            & (results_df["exog_feature"].isin(exog_results["feature"]))
+        ]
 
     # Recompute the B&H FDR for just the target-variable associated results
     # To use `compute_fdr` from `pseudobulk_regression.py` on the p-values
@@ -370,16 +523,17 @@ def main():
         f"Found {total_sig} significantly conditioned pairs across all cell types (Exposure FDR <= {args.fdr_threshold})"
     )
 
+    suffix_tag = f".{args.output_suffix}" if args.output_suffix else ""
     out_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.{args.target_variable}.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.{args.target_variable}{suffix_tag}.csv"
     )
     final_results_df.to_csv(out_file, index=False)
     logger.info(f"Saved conditioned regression results to {out_file}")
 
     sig_out_file = (
         results_dir
-        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.{args.target_variable}.fdr_filtered.csv"
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.all_celltypes.{args.regression_type}.conditioned.{args.target_variable}{suffix_tag}.fdr_filtered.csv"
     )
     sig_results_df = final_results_df.loc[
         final_results_df["exposure_fdr"] <= args.fdr_threshold
