@@ -186,6 +186,15 @@ uv run phase2/development/SEAAD/analyses/format_covariates.py \
   --sample-col donor_id \
   --exclude-ids H21.33.018,H21.33.001,H20.33.036
 
+# use one of the psuedobulk RNA prevelant cell-types to perform a sex check
+CELLTYPE="ExN_CUX2"
+PROJECTNAME="seaad_ec_multiome"
+uv run phase2/analyses/rna_sex_check.py \
+  --project "$PROJECTNAME" \
+  --rna_matrix "$DATADIR"/public/seaad/quants/"$PROJECTNAME"."$CELLTYPE".rna.parquet \
+  --donor_info "$DATADIR"/public/seaad/sample_info/"$PROJECTNAME"."$CELLTYPE".rna.final_covariates.csv \
+  --out_dir "$DATADIR"/public/seaad/figures
+
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do

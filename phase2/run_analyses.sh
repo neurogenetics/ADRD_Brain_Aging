@@ -12,6 +12,16 @@ uv run phase2/analyses/pseudobulk_convert.py --aggregate-type sum --exclude-ids 
 # save project feature set to csv file
 uv run phase2/quantifications/extract_features_from_anndata.py
 
+# use one of the psuedobulk RNA prevelant cell-types to perform a sex check
+DATADIR="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
+CELLTYPE="ExN_CUX2"
+PROJECTNAME="aging_phase2"
+uv run phase2/analyses/rna_sex_check.py \
+  --project "$PROJECTNAME" \
+  --rna_matrix "$DATADIR"/quants/"$PROJECTNAME"."$CELLTYPE".rna.parquet \
+  --donor_info "$DATADIR"/sample_info/"$PROJECTNAME"."$CELLTYPE".rna.final_covariates.csv \
+  --out_dir "$DATADIR"/figures
+
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do
