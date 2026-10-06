@@ -316,3 +316,12 @@ uv run phase2/figures/cis_conditioned_regression_summary.py \
   --project seaad_ec_multiome \
   --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
   --output-suffix dxage
+
+# if small number of attenuated results are age associated, extract these
+uv run python3 phase2/analyses/extract_attenuated_features.py \
+  --project seaad_ec_multiome \
+  --work-dir /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/seaad \
+  --target-variable dx \
+  --output-suffix dxage \
+  --cell-type-map Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo \
+  --save
