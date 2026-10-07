@@ -5,18 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
-import scanpy as sc
+import mudata
 import statsmodels.formula.api as smf
 from cnmf import cNMF
-
-# Import functions from pseudobulk_convert in phase2/analyses to reuse loading logic
-import importlib.util
-analyses_pb_convert = Path(__file__).resolve().parent.parent.parent.parent / "analyses" / "pseudobulk_convert.py"
-spec = importlib.util.spec_from_file_location("phase2_pb_convert", str(analyses_pb_convert))
-phase2_pb_convert = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(phase2_pb_convert)
-
-MODAL_TYPES_DICT = phase2_pb_convert.MODAL_TYPES_DICT
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -24,7 +15,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROJECT = "seaad_ec_multiome"
-DEFAULT_WRK_DIR = "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/seaad"
+DEFAULT_WRK_DIR = (
+    "/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/seaad"
+)
 
 
 def parse_args():
@@ -36,6 +29,18 @@ def parse_args():
     parser.add_argument("--modality", type=str, default="rna", choices=["rna", "atac"])
     parser.add_argument(
         "--cell-type", type=str, required=True, help="Target cell type."
+    )
+    parser.add_argument(
+        "--cell-type-col",
+        type=str,
+        default="broad_cell_type",
+        help="The obs column containing cell type labels (default: 'broad_cell_type').",
+    )
+    parser.add_argument(
+        "--sample-col",
+        type=str,
+        default="sample_id",
+        help="The obs column containing sample/donor IDs (default: 'sample_id').",
     )
     parser.add_argument(
         "--target-variable",
@@ -120,8 +125,8 @@ def main():
 
     safe_ct = args.cell_type.replace(" ", "_").replace("/", "-")
     run_name = f"{args.project}_{safe_ct}_{args.modality}"
-    
-    file_suffix = "lmm" if args.per_cell else "pb_wls"
+
+    file_suffix = "cnmf_lmm" if args.per_cell else "cnmf_pb_wls"
 
     cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
 
@@ -140,7 +145,10 @@ def main():
             print("--k must be an integer or 'auto'")
             sys.exit(1)
 
-    log_filename = logs_dir / f"{args.project}_{args.modality}_{safe_ct}_{args.target_variable}_{file_suffix}.log"
+    log_filename = (
+        logs_dir
+        / f"{args.project}_{args.modality}_{safe_ct}_{args.target_variable}_{file_suffix}.log"
+    )
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
@@ -154,30 +162,45 @@ def main():
     if auto_msg:
         logger.info(auto_msg)
 
-    annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
+    annot_file = work_dir / f"{args.project}_labeled.h5mu"
 
     # Load Annotated Data
     logger.info(f"Loading annotated data from {annot_file}...")
     try:
         # Load in backed mode since we only need the .obs metadata, saving memory and time
-        adata = sc.read_h5ad(annot_file, backed="r")
+        mdata = mudata.read(annot_file, backed="r")
     except Exception as e:
-        logger.error(f"Failed to load annotated anndata object: {e}")
+        logger.error(f"Failed to load annotated mudata object: {e}")
         sys.exit(1)
 
     logger.info(
         f"Subsetting metadata by modality: {args.modality} and cell type: {args.cell_type}"
     )
-    modality_list = MODAL_TYPES_DICT.get(args.modality)
+
+    if args.modality not in mdata.mod:
+        logger.error(
+            f"Modality '{args.modality}' not found in MuData object. Available: {list(mdata.mod.keys())}"
+        )
+        sys.exit(1)
+
+    adata_modal = mdata.mod[args.modality]
 
     try:
+        # Initialize obs_df with modality-specific obs
+        obs_df = adata_modal.obs.copy()
+
+        # Ensure required columns are present in obs_df, pulling from global mdata.obs if necessary
+        required_cols = [args.cell_type_col, args.sample_col, args.target_variable] + args.covariates
+        for col in required_cols:
+            if col not in obs_df.columns and col in mdata.obs.columns:
+                 obs_df[col] = mdata.obs[col].reindex(obs_df.index)
+
         # We only need the observation metadata for the mixed model
-        obs_df = adata.obs[
-            (adata.obs.modality.isin(modality_list))
-            & (adata.obs["cell_label"] == args.cell_type)
+        obs_df = obs_df[
+            (obs_df[args.cell_type_col] == args.cell_type)
         ].copy()
     except Exception as e:
-        logger.error(f"Failed to filter anndata observations: {e}")
+        logger.error(f"Failed to filter mudata observations: {e}")
         sys.exit(1)
 
     if len(obs_df) == 0:
@@ -189,26 +212,38 @@ def main():
     logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
 
     # Load final covariates from info_dir for donor-level covariates
-    covars_file = info_dir / f"{args.project}.{safe_ct}.{args.modality}.final_covariates.csv"
+    covars_file = (
+        info_dir / f"{args.project}.{safe_ct}.{args.modality}.final_covariates.csv"
+    )
     if covars_file.exists():
         logger.info(f"Loading donor-level covariates from {covars_file}...")
         donor_covars = pd.read_csv(covars_file, index_col=0)
-        
-        # Merge the donor-level covariates into the obs_df based on 'sample_id'
-        # Reset index is used here because donor_covars index is sample_id
-        if "sample_id" in obs_df.columns:
-            obs_df = obs_df.merge(donor_covars, left_on="sample_id", right_index=True, how="left", suffixes=("", "_donor"))
-            
+
+        # Merge the donor-level covariates into the obs_df based on sample_col
+        # Reset index is used here because donor_covars index is sample_col
+        if args.sample_col in obs_df.columns:
+            obs_df = obs_df.merge(
+                donor_covars,
+                left_on=args.sample_col,
+                right_index=True,
+                how="left",
+                suffixes=("", "_donor"),
+            )
+
             # If there was overlap in column names (like 'age'), prefer the newly loaded donor version
             for c in donor_covars.columns:
                 if f"{c}_donor" in obs_df.columns:
                     obs_df[c] = obs_df[f"{c}_donor"]
                     obs_df.drop(columns=[f"{c}_donor"], inplace=True)
         else:
-            logger.error("'sample_id' not found in anndata obs. Cannot merge donor covariates.")
+            logger.error(
+                f"'{args.sample_col}' not found in mudata obs. Cannot merge donor covariates."
+            )
             sys.exit(1)
     else:
-        logger.warning(f"Final covariates file not found: {covars_file}. Proceeding with only anndata metadata.")
+        logger.warning(
+            f"Final covariates file not found: {covars_file}. Proceeding with only mudata metadata."
+        )
 
     # Validate that all covariates exist in obs_df
     if args.covariates:
@@ -237,11 +272,15 @@ def main():
         )
         sys.exit(1)
 
-    # cNMF usage index corresponds to the cell IDs from the anndata.
-    # Deduplicate in case target_variable or sample_id is passed as a covariate
-    cols_to_keep = list(dict.fromkeys([args.target_variable, "sample_id"] + args.covariates))
+    # cNMF usage index corresponds to the cell IDs from the mudata.
+    # Deduplicate in case target_variable or sample_col is passed as a covariate
+    cols_to_keep = list(
+        dict.fromkeys([args.target_variable, args.sample_col] + args.covariates)
+    )
     metadata = obs_df[cols_to_keep].copy()
-    metadata[args.target_variable] = pd.to_numeric(metadata[args.target_variable], errors="coerce")
+    metadata[args.target_variable] = pd.to_numeric(
+        metadata[args.target_variable], errors="coerce"
+    )
 
     # Drop rows missing data in any of the required columns
     metadata = metadata.dropna(subset=cols_to_keep)
@@ -255,7 +294,11 @@ def main():
         )
         sys.exit(1)
 
-    mode_str = "Linear Mixed Effects Model (MixedLM, per-cell)" if args.per_cell else "Weighted Least Squares Model (WLS, pseudobulked)"
+    mode_str = (
+        "Linear Mixed Effects Model (MixedLM, per-cell)"
+        if args.per_cell
+        else "Weighted Least Squares Model (WLS, pseudobulked)"
+    )
     logger.info(
         f"Running {mode_str} for {len(df)} cells across {usage.shape[1]} latent factors."
     )
@@ -263,20 +306,20 @@ def main():
     base_formula = f"latent_factor ~ {args.target_variable}"
     formula_covariates = []
 
-    # Check for multicollinearity. 
+    # Check for multicollinearity.
     # For pseudobulk, we must check it at the donor level, not the cell level!
-    meta_cols = [c for c in cols_to_keep if c != "sample_id"]
+    meta_cols = [c for c in cols_to_keep if c != args.sample_col]
     if not args.per_cell:
         # Aggregate covariates to the donor level to correctly assess variance
-        test_df = df.groupby("sample_id")[meta_cols].first().dropna()
+        test_df = df.groupby(args.sample_col)[meta_cols].first().dropna()
     else:
         test_df = df[meta_cols].dropna()
 
     if args.covariates:
         import patsy
 
-        # Filter out sample_id from the fixed effects formula since it's the random effect grouping variable
-        candidates = [c for c in args.covariates if c != "sample_id"]
+        # Filter out sample_col from the fixed effects formula since it's the random effect grouping variable
+        candidates = [c for c in args.covariates if c != args.sample_col]
 
         for c in candidates:
             # Check if the covariate has more than 1 unique value in this subset
@@ -291,7 +334,9 @@ def main():
         if formula_covariates:
             try:
                 # Build a dummy design matrix using the candidate covariates to check rank
-                test_formula = f"{args.target_variable} ~ " + " + ".join(formula_covariates)
+                test_formula = f"{args.target_variable} ~ " + " + ".join(
+                    formula_covariates
+                )
                 if len(test_df) > 0:
                     y, X = patsy.dmatrices(
                         test_formula, test_df, return_type="dataframe"
@@ -306,7 +351,8 @@ def main():
                         final_covariates = []
                         for c in formula_covariates:
                             curr_formula = (
-                                f"{args.target_variable} ~ " + " + ".join(final_covariates + [c])
+                                f"{args.target_variable} ~ "
+                                + " + ".join(final_covariates + [c])
                                 if final_covariates
                                 else f"{args.target_variable} ~ {c}"
                             )
@@ -327,7 +373,7 @@ def main():
             base_formula += " + " + " + ".join(formula_covariates)
 
     if args.per_cell:
-        logger.info(f"Formula: {base_formula} + (1|sample_id)")
+        logger.info(f"Formula: {base_formula} + (1|{args.sample_col})")
     else:
         logger.info(f"Formula: {base_formula} (weights=cell_count)")
 
@@ -338,12 +384,12 @@ def main():
     for factor in factor_cols:
         logger.info(f"Fitting model for latent factor '{factor}'...")
 
-        formula_df = df[[factor, "sample_id"] + meta_cols].copy()
+        formula_df = df[[factor, args.sample_col] + meta_cols].copy()
         formula_df.rename(columns={factor: "latent_factor"}, inplace=True)
 
         try:
-            # Ensure sample_id is explicitly a string and no missing values cause length mismatch
-            formula_df["sample_id"] = formula_df["sample_id"].astype(str)
+            # Ensure sample_col is explicitly a string and no missing values cause length mismatch
+            formula_df[args.sample_col] = formula_df[args.sample_col].astype(str)
             formula_df = formula_df.dropna()
 
             if not args.per_cell:
@@ -351,20 +397,20 @@ def main():
                 agg_dict = {"latent_factor": "mean"}
                 for c in meta_cols:
                     agg_dict[c] = "first"
-                    
-                pb_df = formula_df.groupby("sample_id").agg(agg_dict)
-                pb_df["cell_count"] = formula_df.groupby("sample_id").size()
-                
+
+                pb_df = formula_df.groupby(args.sample_col).agg(agg_dict)
+                pb_df["cell_count"] = formula_df.groupby(args.sample_col).size()
+
                 md = smf.wls(base_formula, pb_df, weights=pb_df["cell_count"])
                 mdf = md.fit()
-                
+
                 # OLS/WLS inherently converges if fit() completes
                 converged = True
                 summary_str = mdf.summary()
-                
+
             else:
                 # PER-CELL (MixedLM)
-                md = smf.mixedlm(base_formula, formula_df, groups="sample_id")
+                md = smf.mixedlm(base_formula, formula_df, groups=args.sample_col)
                 mdf = md.fit()
                 converged = mdf.converged
                 summary_str = mdf.summary()
@@ -407,12 +453,13 @@ def main():
     # Save results
     out_dir = cnmf_dir / ("lmm_results" if args.per_cell else "wls_pb_results")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{args.project}_{safe_ct}_{args.modality}_{args.target_variable}_{file_suffix}.csv"
+    out_file = (
+        out_dir
+        / f"{args.project}_{safe_ct}_{args.modality}_{args.target_variable}_{file_suffix}.csv"
+    )
     results_df.to_csv(out_file, index=False)
 
-    logger.info(
-        f"Regression analysis complete. Results saved to:\n  {out_file}"
-    )
+    logger.info(f"Regression analysis complete. Results saved to:\n  {out_file}")
 
 
 if __name__ == "__main__":

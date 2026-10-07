@@ -333,8 +333,8 @@ MODALITIES="rna atac"
 for CELLTYPE in ${CELLTYPES[@]}; do
   for MODALITY in ${MODALITIES[@]}; do
     echo "$CELLTYPE" "$MODALITY"
-    uv run phase2/development/SEAAD/analyses/cnmf_latent_generation.py \
-      --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
+    --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
+      uv run phase2/development/SEAAD/analyses/cnmf_latent_generation.py \
       --cell-type "$CELLTYPE" \
       --cell-type-col anno_coarse \
       --sample-col donor_id \
@@ -344,10 +344,19 @@ for CELLTYPE in ${CELLTYPES[@]}; do
   done
 done
 
-# review cNMF stability figures and run latent based analysis using the determined K
-for CELLTYPE in "${CELLTYPES[@]}"; do
-  uv run phase2/development/SEAAD/analyses/cnmf_latent_regressions.py --modality rna --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
-  uv run phase2/development/SEAAD/analyses/cnmf_latent_regressions.py --modality atac --cell-type "$CELLTYPE" --k auto --covariates PCA_0 PCA_1 PCA_2 PCA_3
+# run regression analsysis for AD using the generated latents
+for CELLTYPE in ${CELLTYPES[@]}; do
+  # review cNMF stability figures and run latent based analysis using the determined K
+  for MODALITY in ${MODALITIES[@]}; do
+    echo "$CELLTYPE" "$MODALITY"
+    uv run phase2/development/SEAAD/analyses/cnmf_latent_regressions.py \
+      --modality "$MODALITY" \
+      --cell-type "$CELLTYPE" \
+      --cell-type-col anno_coarse \
+      --sample-col donor_id \
+      --k auto \
+      --covariates PCA_0 PCA_1 PCA_2 PCA_3
+  done
 done
 
 # combine the cNMF latent regression output and compute FDRs
