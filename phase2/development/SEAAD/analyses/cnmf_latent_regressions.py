@@ -185,31 +185,46 @@ def main():
 
     adata_modal = mdata.mod[args.modality]
 
-    try:
-        # Initialize obs_df with modality-specific obs
-        obs_df = adata_modal.obs.copy()
-
-        # Ensure required columns are present in obs_df, pulling from global mdata.obs if necessary
-        required_cols = [args.cell_type_col, args.sample_col, args.target_variable] + args.covariates
-        for col in required_cols:
-            if col not in obs_df.columns and col in mdata.obs.columns:
-                 obs_df[col] = mdata.obs[col].reindex(obs_df.index)
-
-        # We only need the observation metadata for the mixed model
-        obs_df = obs_df[
-            (obs_df[args.cell_type_col] == args.cell_type)
-        ].copy()
-    except Exception as e:
-        logger.error(f"Failed to filter mudata observations: {e}")
+    # Resolve cell type column
+    if args.cell_type_col in adata_modal.obs.columns:
+        cell_types_series = adata_modal.obs[args.cell_type_col]
+    elif args.cell_type_col in mdata.obs.columns:
+        cell_types_series = mdata.obs[args.cell_type_col]
+    else:
+        logger.error(
+            f"Cell type column '{args.cell_type_col}' not found in modality or global obs."
+        )
         sys.exit(1)
 
-    if len(obs_df) == 0:
+    # Normalize cell-type query (allow matching with spaces or underscores)
+    target_ct_norm = args.cell_type.replace("_", " ").strip()
+    cell_types_clean = cell_types_series.astype(str).str.replace("_", " ").str.strip()
+    mask = cell_types_clean == target_ct_norm
+
+    n_matched = int(mask.sum())
+    logger.info(
+        f"Found {n_matched} cells matching cell type '{args.cell_type}' in modality '{args.modality}'"
+    )
+
+    if n_matched == 0:
         logger.error(
             f"No cells found for cell type {args.cell_type} in modality {args.modality}."
         )
         sys.exit(1)
 
-    logger.info(f"Found {len(obs_df)} cells for {args.cell_type}.")
+    try:
+        # Initialize obs_df with modality-specific obs, filtered by mask
+        obs_df = adata_modal.obs[mask.values].copy()
+
+        # Ensure required columns are present in obs_df, pulling from global mdata.obs if necessary
+        required_cols = [args.sample_col, args.target_variable] + args.covariates
+        for col in required_cols:
+            if col not in obs_df.columns and col in mdata.obs.columns:
+                 obs_df[col] = mdata.obs[col][mask.values].values
+
+    except Exception as e:
+        logger.error(f"Failed to filter mudata observations: {e}")
+        sys.exit(1)
 
     # Load final covariates from info_dir for donor-level covariates
     covars_file = (
