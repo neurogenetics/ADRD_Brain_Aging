@@ -6,19 +6,10 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import seaborn as sns
-import scanpy as sc
+import mudata
 from scipy.stats import spearmanr, pearsonr
 from statsmodels.stats.multitest import fdrcorrection
 from cnmf import cNMF
-
-# Import functions from pseudobulk_convert in phase2/analyses to reuse loading logic
-import importlib.util
-analyses_pb_convert = Path(__file__).resolve().parent.parent.parent.parent / "analyses" / "pseudobulk_convert.py"
-spec = importlib.util.spec_from_file_location("phase2_pb_convert", str(analyses_pb_convert))
-phase2_pb_convert = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(phase2_pb_convert)
-
-MODAL_TYPES_DICT = phase2_pb_convert.MODAL_TYPES_DICT
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -40,6 +31,18 @@ def parse_args():
         type=str,
         default="dx",
         help="The primary disease target variable column in covariates (default: 'dx').",
+    )
+    parser.add_argument(
+        "--cell-type-col",
+        type=str,
+        default="broad_cell_type",
+        help="The obs column containing cell type labels (default: 'broad_cell_type').",
+    )
+    parser.add_argument(
+        "--sample-col",
+        type=str,
+        default="sample_id",
+        help="The obs column containing sample/donor IDs (default: 'sample_id').",
     )
     parser.add_argument(
         "--density-threshold",
@@ -82,7 +85,7 @@ def parse_args():
 
 
 def load_sig_factors(results_dir, project, modality, target_variable, p_threshold, per_cell):
-    regression_type = "lmm" if per_cell else "pb_wls"
+    regression_type = "cnmf_lmm" if per_cell else "cnmf_pb_wls"
     fdr_file = (
         results_dir
         / "latents"
@@ -136,7 +139,7 @@ def main():
     logs_dir.mkdir(parents=True, exist_ok=True)
     figs_dir.mkdir(parents=True, exist_ok=True)
 
-    file_suffix = "lmm" if args.per_cell else "pb_wls"
+    file_suffix = "cnmf_lmm" if args.per_cell else "cnmf_pb_wls"
     cnmf_dir = results_dir / "latents" / args.cnmf_dir_name
 
     log_filename = logs_dir / f"{args.project}_compare_latent_factors_{args.target_variable}_{file_suffix}.log"
@@ -166,18 +169,14 @@ def main():
 
     logger.info(f"Total significant factors to compare: {len(sig_factors)}")
 
-    annot_file = quants_dir / f"{args.project}.multivi.annotated.h5ad"
+    annot_file = work_dir / f"{args.project}_labeled.h5mu"
     logger.info(f"Loading annotated data obs from {annot_file}...")
     try:
-        adata = sc.read_h5ad(annot_file, backed="r")
-        # Only load the columns we need to save memory
-        obs_df = adata.obs[["modality", "cell_label", "sample_id"]].copy()
-        # Create a safe cell label to match cNMF directory names and results
-        obs_df["safe_cell_label"] = (
-            obs_df["cell_label"].str.replace(" ", "_").str.replace("/", "-")
-        )
+        mdata = mudata.read(annot_file, backed="r")
+        # To mimic previous behavior where "modality" was a column, we will rely 
+        # strictly on passing the correct expected modality down the line instead of relying on `MODAL_TYPES_DICT`
     except Exception as e:
-        logger.error(f"Failed to load annotated anndata object: {e}")
+        logger.error(f"Failed to load annotated mudata object: {e}")
         sys.exit(1)
 
     # Dictionary to store usage dataframes for each significant factor
@@ -207,13 +206,49 @@ def main():
             )
             continue
 
-        modality_list = MODAL_TYPES_DICT.get(mod, [mod])
-        ct_obs = obs_df[
-            (obs_df.modality.isin(modality_list)) & (obs_df["safe_cell_label"] == ct)
-        ].copy()
+        if mod not in mdata.mod:
+            logger.warning(f"Modality '{mod}' not found in MuData object. Skipping {run_name}")
+            continue
+            
+        adata_modal = mdata.mod[mod]
+        
+        # Resolve cell type column
+        if args.cell_type_col in adata_modal.obs.columns:
+            cell_types_series = adata_modal.obs[args.cell_type_col]
+        elif args.cell_type_col in mdata.obs.columns:
+            cell_types_series = mdata.obs[args.cell_type_col]
+        else:
+            logger.error(
+                f"Cell type column '{args.cell_type_col}' not found in modality or global obs."
+            )
+            sys.exit(1)
 
-        # Ensure sample_id is string
-        ct_obs["sample_id"] = ct_obs["sample_id"].astype(str)
+        # Resolve sample ID column
+        if args.sample_col in adata_modal.obs.columns:
+            sample_ids_series = adata_modal.obs[args.sample_col]
+        elif args.sample_col in mdata.obs.columns:
+            sample_ids_series = mdata.obs[args.sample_col]
+        else:
+            logger.error(
+                f"Sample column '{args.sample_col}' not found in modality or global obs."
+            )
+            sys.exit(1)
+
+        # Create safe target
+        target_ct_norm = ct.replace("_", " ").strip()
+        cell_types_clean = cell_types_series.astype(str).str.replace("_", " ").str.strip()
+        
+        mask = cell_types_clean == target_ct_norm
+
+        if int(mask.sum()) == 0:
+            logger.warning(
+                f"No cells left for {run_name}"
+            )
+            continue
+            
+        # Instead of constructing a dataframe, we can create just what we need:
+        ct_obs = pd.DataFrame(index=adata_modal.obs.index[mask.values])
+        ct_obs["sample_id"] = sample_ids_series[mask.values].astype(str).values
 
         # Filter usage index to only cells in ct_obs
         usage = usage.reindex(ct_obs.index).dropna()

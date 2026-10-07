@@ -360,8 +360,8 @@ for CELLTYPE in ${CELLTYPES[@]}; do
 done
 
 # combine the cNMF latent regression output and compute FDRs
-uv run phase2/analyses/post_cnmf_latent_regressions.py --modality rna
-uv run phase2/analyses/post_cnmf_latent_regressions.py --modality atac
+uv run phase2/development/SEAAD/analyses/post_cnmf_latent_regressions.py --modality rna
+uv run phase2/development/SEAAD/analyses/post_cnmf_latent_regressions.py --modality atac
 
 # compare the age association latent factor with others across cell-types and modalities
-uv run phase2/analyses/compare_target_latent_factors.py
+uv run phase2/development/SEAAD/analyses/compare_target_latent_factors.py

@@ -55,7 +55,7 @@ def parse_args():
 def main():
     args = parse_args()
     
-    regression_type = "lmm" if args.per_cell else "pb_wls"
+    regression_type = "cnmf_lmm" if args.per_cell else "cnmf_pb_wls"
 
     work_dir = Path(args.work_dir)
     results_dir = work_dir / "results"
