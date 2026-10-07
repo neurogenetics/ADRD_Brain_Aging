@@ -55,6 +55,13 @@ def parse_args():
         choices=["coef", "z", "fc", "log2fc", "percentchange"],
         help="Effect column to use for Spearman correlation.",
     )
+    parser.add_argument(
+        "--feature-space",
+        type=str,
+        default="global",
+        choices=["global", "pairwise"],
+        help="Feature space for correlation: 'global' (union across all cell-types) or 'pairwise' (union per cell-type pair).",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -89,6 +96,7 @@ def main():
     regression_type = args.regression_type
     effect_column = args.effect_column
     target_variable = args.target_variable
+    feature_space = args.feature_space
 
     # Define file paths
     fdr_file = (
@@ -130,35 +138,73 @@ def main():
         logger.error("Column 'feature' missing in full results.")
         return
 
-    logger.info(f"Filtering full results to {len(sig_features)} significant features.")
-    filtered_df = full_df[full_df["feature"].isin(sig_features)].copy()
+    if feature_space == "global":
+        logger.info(f"Filtering full results to {len(sig_features)} significant features.")
+        filtered_df = full_df[full_df["feature"].isin(sig_features)].copy()
 
-    # Pivot table
-    logger.info(f"Pivoting table using effect column '{effect_column}'.")
-    # Using drop_duplicates to handle any duplicated feature-tissue combinations
-    pivot_df = filtered_df.drop_duplicates(subset=["feature", "tissue"]).pivot(
-        index="feature", columns="tissue", values=effect_column
-    )
-
-    # Handle missing values
-    missing_pct = pivot_df.isna().mean().mean() * 100
-    if missing_pct > 0:
-        logger.warning(
-            f"Pivot table contains {missing_pct:.2f}% missing values. Filling with 0."
+        # Pivot table
+        logger.info(f"Pivoting table using effect column '{effect_column}'.")
+        # Using drop_duplicates to handle any duplicated feature-tissue combinations
+        pivot_df = filtered_df.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
         )
 
-    # Compute Spearman correlation
-    logger.info("Computing Spearman correlation matrix.")
-    corr_matrix = pivot_df.corr(method="spearman")
+        # Handle missing values
+        missing_pct = pivot_df.isna().mean().mean() * 100
+        if missing_pct > 0:
+            logger.warning(
+                f"Pivot table contains {missing_pct:.2f}% missing values. Filling with 0."
+            )
+            pivot_df = pivot_df.fillna(0)
+
+        # Compute Spearman correlation
+        logger.info("Computing Spearman correlation matrix (global feature space).")
+        corr_matrix = pivot_df.corr(method="spearman")
+    else:
+        logger.info("Computing Spearman correlation matrix using pairwise feature space.")
+        if "tissue" not in fdr_df.columns:
+            logger.error(
+                "Column 'tissue' missing in FDR filtered results; cannot compute pairwise feature space."
+            )
+            return
+
+        full_pivot = full_df.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
+        )
+        tissues = list(full_pivot.columns)
+        sig_by_tissue = {
+            t: set(fdr_df.loc[fdr_df["tissue"] == t, "feature"].unique())
+            for t in tissues
+        }
+
+        corr_matrix = pd.DataFrame(index=tissues, columns=tissues, dtype=float)
+        for i, t1 in enumerate(tissues):
+            corr_matrix.loc[t1, t1] = 1.0
+            for j in range(i + 1, len(tissues)):
+                t2 = tissues[j]
+                pair_union = list(sig_by_tissue[t1].union(sig_by_tissue[t2]))
+                if len(pair_union) < 2:
+                    val = 0.0
+                else:
+                    v1 = full_pivot[t1].reindex(pair_union).fillna(0)
+                    v2 = full_pivot[t2].reindex(pair_union).fillna(0)
+                    val = v1.corr(v2, method="spearman")
+                    if pd.isna(val):
+                        val = 0.0
+                corr_matrix.loc[t1, t2] = val
+                corr_matrix.loc[t2, t1] = val
+
+    corr_matrix = corr_matrix.fillna(0)
 
     # Plot
+    space_suffix = f".{feature_space}" if feature_space != "global" else ""
     fig_filename_png = (
         figures_dir
-        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}.png"
+        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}{space_suffix}.png"
     )
     fig_filename_svg = (
         figures_dir
-        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}.svg"
+        / f"{project}.{modality}.{regression_type}.celltype_similarity.{target_variable}.{effect_column}{space_suffix}.svg"
     )
     logger.info("Generating clustered heatmap.")
 
@@ -178,10 +224,10 @@ def main():
     g.ax_row_dendrogram.set_visible(False)
     g.ax_col_dendrogram.set_visible(False)
 
-    g.ax_heatmap.set_title(
-        f"Cell-Type Similarity\nModality: {modality.upper()}, Target: {target_variable.upper()}, Effect: {effect_column}",
-        pad=20,
-    )
+    title = f"Cell-Type Similarity\nModality: {modality.upper()}, Target: {target_variable.upper()}, Effect: {effect_column}"
+    if feature_space != "global":
+        title += f", Space: {feature_space.capitalize()}"
+    g.ax_heatmap.set_title(title, pad=20)
     g.ax_heatmap.set_xlabel("Cell Type")
     g.ax_heatmap.set_ylabel("Cell Type")
 

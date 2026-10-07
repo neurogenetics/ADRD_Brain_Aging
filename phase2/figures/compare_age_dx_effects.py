@@ -79,6 +79,13 @@ def parse_args():
         default=None,
         help="Comma-separated mapping of Age cell-type names to Dx names, format: 'AgeName:DxName,AgeName2:DxName2'",
     )
+    parser.add_argument(
+        "--feature-space",
+        type=str,
+        default="global",
+        choices=["global", "pairwise"],
+        help="Feature space for correlation: 'global' (union across all cell-types) or 'pairwise' (union per cell-type pair).",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -126,6 +133,7 @@ def main():
     modality = args.modality.lower()
     regression_type = args.regression_type
     effect_column = args.effect_column
+    feature_space = args.feature_space
 
     # Define input file paths
     # Age inputs
@@ -219,57 +227,96 @@ def main():
     # Get the union of significant features across both age and dx to use as background
     age_sig_features = set(age_fdr["feature"].unique())
     dx_sig_features = set(dx_fdr["feature"].unique())
-    sig_features = sorted(list(age_sig_features.union(dx_sig_features)))
+    if feature_space == "global":
+        sig_features = sorted(list(age_sig_features.union(dx_sig_features)))
 
-    logger.info("Union of significant features across both: %d", len(sig_features))
-    
-    # Filter full results to these features
-    age_filtered = age_full[age_full["feature"].isin(sig_features)].copy()
-    dx_filtered = dx_full[dx_full["feature"].isin(sig_features)].copy()
+        logger.info("Union of significant features across both: %d", len(sig_features))
+        
+        # Filter full results to these features
+        age_filtered = age_full[age_full["feature"].isin(sig_features)].copy()
+        dx_filtered = dx_full[dx_full["feature"].isin(sig_features)].copy()
 
-    # Pivot tables
-    logger.info("Pivoting tables...")
-    age_pivot = age_filtered.drop_duplicates(subset=["feature", "tissue"]).pivot(
-        index="feature", columns="tissue", values=effect_column
-    )
-    dx_pivot = dx_filtered.drop_duplicates(subset=["feature", "tissue"]).pivot(
-        index="feature", columns="tissue", values=effect_column
-    )
+        # Pivot tables
+        logger.info("Pivoting tables...")
+        age_pivot = age_filtered.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
+        )
+        dx_pivot = dx_filtered.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
+        )
 
-    # Align indexes on common features
-    common_idx = age_pivot.index.intersection(dx_pivot.index)
-    if len(common_idx) == 0:
-        logger.warning("No overlapping features in full tables. Heatmap generation skipped.")
-        sys.exit(0)
+        # Align indexes on common features
+        common_idx = age_pivot.index.intersection(dx_pivot.index)
+        if len(common_idx) == 0:
+            logger.warning("No overlapping features in full tables. Heatmap generation skipped.")
+            sys.exit(0)
 
-    logger.info("Aligning %d features for correlation matrix...", len(common_idx))
-    age_aligned = age_pivot.loc[common_idx]
-    dx_aligned = dx_pivot.loc[common_idx]
+        logger.info("Aligning %d features for correlation matrix...", len(common_idx))
+        age_aligned = age_pivot.loc[common_idx]
+        dx_aligned = dx_pivot.loc[common_idx]
 
-    # Combine columns under keys to compute full correlation
-    combined = pd.concat([age_aligned, dx_aligned], axis=1, keys=["Age", "Dx"])
-    
-    # Handle missing values
-    missing_pct = combined.isna().mean().mean() * 100
-    if missing_pct > 0:
-        logger.warning("Combined matrix contains %.2f%% missing values. Filling with 0.", missing_pct)
-        combined = combined.fillna(0)
+        # Combine columns under keys to compute full correlation
+        combined = pd.concat([age_aligned, dx_aligned], axis=1, keys=["Age", "Dx"])
+        
+        # Handle missing values
+        missing_pct = combined.isna().mean().mean() * 100
+        if missing_pct > 0:
+            logger.warning("Combined matrix contains %.2f%% missing values. Filling with 0.", missing_pct)
+            combined = combined.fillna(0)
 
-    # Compute correlation
-    logger.info("Computing Spearman cross-correlation...")
-    corr = combined.corr(method="spearman")
-    
-    # Extract asymmetric sub-matrix: Rows = Dx cell types, Columns = Age cell types
-    cross_corr = corr.loc["Dx", "Age"].fillna(0)
+        # Compute correlation
+        logger.info("Computing Spearman cross-correlation (global feature space)...")
+        corr = combined.corr(method="spearman")
+        
+        # Extract asymmetric sub-matrix: Rows = Dx cell types, Columns = Age cell types
+        cross_corr = corr.loc["Dx", "Age"].fillna(0)
+    else:
+        logger.info("Computing Spearman cross-correlation using pairwise feature space...")
+        age_full_pivot = age_full.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
+        )
+        dx_full_pivot = dx_full.drop_duplicates(subset=["feature", "tissue"]).pivot(
+            index="feature", columns="tissue", values=effect_column
+        )
+
+        age_tissues_list = list(age_full_pivot.columns)
+        dx_tissues_list = list(dx_full_pivot.columns)
+
+        age_sig = {
+            t: set(age_fdr.loc[age_fdr["tissue"] == t, "feature"].unique())
+            for t in age_tissues_list
+        } if "tissue" in age_fdr.columns else {}
+        dx_sig = {
+            t: set(dx_fdr.loc[dx_fdr["tissue"] == t, "feature"].unique())
+            for t in dx_tissues_list
+        } if "tissue" in dx_fdr.columns else {}
+
+        cross_corr = pd.DataFrame(index=dx_tissues_list, columns=age_tissues_list, dtype=float)
+        for dt in dx_tissues_list:
+            dt_sig = dx_sig.get(dt, set())
+            for at in age_tissues_list:
+                at_sig = age_sig.get(at, set())
+                pair_union = list(dt_sig.union(at_sig))
+                if len(pair_union) < 2:
+                    val = 0.0
+                else:
+                    v_dx = dx_full_pivot[dt].reindex(pair_union).fillna(0)
+                    v_age = age_full_pivot[at].reindex(pair_union).fillna(0)
+                    val = v_dx.corr(v_age, method="spearman")
+                    if pd.isna(val):
+                        val = 0.0
+                cross_corr.loc[dt, at] = val
+        cross_corr = cross_corr.fillna(0)
 
     # Plot
+    space_suffix = f".{feature_space}" if feature_space != "global" else ""
     fig_filename_png = (
         dx_figures_dir
-        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}.png"
+        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}.png"
     )
     fig_filename_svg = (
         dx_figures_dir
-        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}.svg"
+        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}.svg"
     )
 
     logger.info("Generating asymmetric clustered heatmap...")
@@ -293,8 +340,11 @@ def main():
         g.ax_row_dendrogram.set_visible(False)
         g.ax_col_dendrogram.set_visible(False)
         
+        title = f"Age vs Dx Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}"
+        if feature_space != "global":
+            title += f", Space: {feature_space.capitalize()}"
         g.ax_heatmap.set_title(
-            f"Age vs Dx Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}",
+            title,
             pad=20,
             fontweight="bold",
         )

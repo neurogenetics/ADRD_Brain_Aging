@@ -249,6 +249,15 @@ for MODALITY in ${MODALITIES[@]}; do
     --project seaad_ec_multiome
 done
 
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/celltype_target_effect_similarity.py \
+    --modality ${MODALITY} \
+    --target-variable dx \
+    --work-dir "$DATADIR"/public/seaad \
+    --project seaad_ec_multiome \
+    --pairwise
+done
+
 # compare age analysis results with dx analysis results
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/compare_age_dx_effects.py \
@@ -256,6 +265,15 @@ for MODALITY in ${MODALITIES[@]}; do
     --regression-type wls \
     --effect-column coef \
     --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo"
+done
+
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/compare_age_dx_effects.py \
+    --modality ${MODALITY} \
+    --regression-type wls \
+    --effect-column coef \
+    --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
+    --pairwise
 done
 
 # power analysis of this study
@@ -364,4 +382,4 @@ uv run phase2/development/SEAAD/analyses/post_cnmf_latent_regressions.py --modal
 uv run phase2/development/SEAAD/analyses/post_cnmf_latent_regressions.py --modality atac
 
 # compare the age association latent factor with others across cell-types and modalities
-uv run phase2/development/SEAAD/analyses/compare_target_latent_factors.py
+uv run phase2/development/SEAAD/analyses/compare_target_latent_factors.py --cell-type-col anno_coarse --sample-col donor_id
