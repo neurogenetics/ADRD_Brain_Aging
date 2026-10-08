@@ -241,6 +241,7 @@ for MODALITY in ${MODALITIES[@]}; do
 done
 
 # visualize similarities of disease status effects between tissues
+## union of significant features as heatmap
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/celltype_target_effect_similarity.py \
     --modality ${MODALITY} \
@@ -248,17 +249,28 @@ for MODALITY in ${MODALITIES[@]}; do
     --work-dir "$DATADIR"/public/seaad \
     --project seaad_ec_multiome
 done
-
+## intersect of significant features as heatmap
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/celltype_target_effect_similarity.py \
     --modality ${MODALITY} \
     --target-variable dx \
     --work-dir "$DATADIR"/public/seaad \
     --project seaad_ec_multiome \
-    --pairwise
+    --feature-space pairwise
+done
+## intersect of significant features as dotplot
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/celltype_target_effect_similarity.py \
+    --modality ${MODALITY} \
+    --target-variable dx \
+    --work-dir "$DATADIR"/public/seaad \
+    --project seaad_ec_multiome \
+    --feature-space pairwise \
+    --plot-type dotplot
 done
 
 # compare age analysis results with dx analysis results
+## union of significant features as heatmap
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/compare_age_dx_effects.py \
     --modality ${MODALITY} \
@@ -266,14 +278,24 @@ for MODALITY in ${MODALITIES[@]}; do
     --effect-column coef \
     --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo"
 done
-
+## intersect of significant features as heatmap
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/compare_age_dx_effects.py \
     --modality ${MODALITY} \
     --regression-type wls \
     --effect-column coef \
     --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
-    --pairwise
+    --feature-space pairwise
+done
+## intersect of significant features as dotplot
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/compare_age_dx_effects.py \
+    --modality ${MODALITY} \
+    --regression-type wls \
+    --effect-column coef \
+    --cell-type-map "Astrocytes:Astro,Microglia:Micro,OPCs:OPC,Oligodendrocytes:Oligo" \
+    --feature-space pairwise \
+    --plot-type dotplot
 done
 
 # power analysis of this study

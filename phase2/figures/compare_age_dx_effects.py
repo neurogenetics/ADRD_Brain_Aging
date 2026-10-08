@@ -86,6 +86,13 @@ def parse_args():
         choices=["global", "pairwise"],
         help="Feature space for correlation: 'global' (union across all cell-types) or 'pairwise' (union per cell-type pair).",
     )
+    parser.add_argument(
+        "--plot-type",
+        type=str,
+        default="heatmap",
+        choices=["heatmap", "dotplot"],
+        help="Visualization type: 'heatmap' (default) or 'dotplot' (circle diameter reflects shared feature count).",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -134,6 +141,7 @@ def main():
     regression_type = args.regression_type
     effect_column = args.effect_column
     feature_space = args.feature_space
+    plot_type = args.plot_type
 
     # Define input file paths
     # Age inputs
@@ -308,41 +316,145 @@ def main():
                 cross_corr.loc[dt, at] = val
         cross_corr = cross_corr.fillna(0)
 
+    # Compute intersection count matrix for dotplot or reporting
+    dx_sig_map = {
+        t: set(dx_fdr.loc[dx_fdr["tissue"] == t, "feature"].unique())
+        for t in cross_corr.index
+    } if "tissue" in dx_fdr.columns else {}
+    age_sig_map = {
+        t: set(age_fdr.loc[age_fdr["tissue"] == t, "feature"].unique())
+        for t in cross_corr.columns
+    } if "tissue" in age_fdr.columns else {}
+
+    count_matrix = pd.DataFrame(index=cross_corr.index, columns=cross_corr.columns, dtype=int)
+    for dt in cross_corr.index:
+        dt_features = dx_sig_map.get(dt, set())
+        for at in cross_corr.columns:
+            at_features = age_sig_map.get(at, set())
+            count_matrix.loc[dt, at] = len(dt_features.intersection(at_features))
+
     # Plot
     space_suffix = f".{feature_space}" if feature_space != "global" else ""
+    plot_suffix = f".{plot_type}" if plot_type != "heatmap" else ""
     fig_filename_png = (
         dx_figures_dir
-        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}.png"
+        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}{plot_suffix}.png"
     )
     fig_filename_svg = (
         dx_figures_dir
-        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}.svg"
+        / f"{args.dx_project}.{modality}.{regression_type}_age_dx_similarity.{effect_column}{space_suffix}{plot_suffix}.svg"
     )
 
-    logger.info("Generating asymmetric clustered heatmap...")
+    logger.info("Generating asymmetric clustered %s...", plot_type)
     try:
         # Clustermap handles asymmetric matrices beautifully
         plt.figure(figsize=(10, 8))
         sns.set_theme(style="white")
         
+        cbar_pos = (1.05, 0.15, 0.03, 0.3) if plot_type == "dotplot" else (1.05, 0.2, 0.03, 0.6)
+
         g = sns.clustermap(
             cross_corr,
             cmap="vlag",
-            annot=True,
+            annot=True if plot_type == "heatmap" else False,
             annot_kws={"size": 8},
             fmt=".2f",
             figsize=(10, 8),
             vmin=-1,
             vmax=1,
-            cbar_pos=(1.05, 0.2, 0.03, 0.6),
+            cbar_pos=cbar_pos,
+            cbar_kws={"label": "Spearman Correlation"} if plot_type == "dotplot" else None,
             dendrogram_ratio=0.01,
         )
         g.ax_row_dendrogram.set_visible(False)
         g.ax_col_dendrogram.set_visible(False)
         
+        if plot_type == "dotplot":
+            row_order = g.dendrogram_row.reordered_ind
+            col_order = g.dendrogram_col.reordered_ind
+
+            reordered_corr = cross_corr.iloc[row_order, col_order]
+            reordered_counts = count_matrix.iloc[row_order, col_order]
+
+            g.ax_heatmap.clear()
+
+            nrows, ncols = reordered_corr.shape
+            x, y = np.meshgrid(np.arange(ncols), np.arange(nrows))
+            x_flat = x.flatten() + 0.5
+            y_flat = y.flatten() + 0.5
+            c_flat = reordered_corr.values.flatten()
+            counts_flat = reordered_counts.values.flatten()
+
+            c_max = counts_flat.max() if len(counts_flat) > 0 else 0
+            d_max = 20.0
+            d_min = 4.0
+
+            diameters = np.zeros_like(counts_flat, dtype=float)
+            if c_max > 0:
+                nonzero = counts_flat > 0
+                diameters[nonzero] = np.maximum(d_min, d_max * (counts_flat[nonzero] / c_max))
+            s_flat = diameters ** 2
+
+            # Draw subtle grid lines behind dots
+            g.ax_heatmap.set_xticks(np.arange(ncols + 1), minor=True)
+            g.ax_heatmap.set_yticks(np.arange(nrows + 1), minor=True)
+            g.ax_heatmap.grid(which="minor", color="#e0e0e0", linestyle="-", linewidth=0.5)
+
+            mask = counts_flat > 0
+            if np.any(mask):
+                g.ax_heatmap.scatter(
+                    x_flat[mask],
+                    y_flat[mask],
+                    c=c_flat[mask],
+                    s=s_flat[mask],
+                    cmap="vlag",
+                    vmin=-1,
+                    vmax=1,
+                    edgecolors="#555555",
+                    linewidth=0.5,
+                )
+
+            g.ax_heatmap.set_xticks(np.arange(ncols) + 0.5)
+            g.ax_heatmap.set_yticks(np.arange(nrows) + 0.5)
+            g.ax_heatmap.set_xticklabels(reordered_corr.columns, rotation=90)
+            g.ax_heatmap.set_yticklabels(reordered_corr.index, rotation=0)
+            g.ax_heatmap.set_xlim(0, ncols)
+            g.ax_heatmap.set_ylim(nrows, 0)
+
+            # Legend for dot sizes anchored above colorbar
+            if c_max > 0:
+                nonzero_counts = counts_flat[counts_flat > 0]
+                if len(nonzero_counts) > 0:
+                    c_min = nonzero_counts.min()
+                    legend_vals = np.unique(np.linspace(c_min, c_max, num=4, dtype=int))
+                    legend_handles = []
+                    for val in legend_vals:
+                        d = max(d_min, d_max * (val / c_max))
+                        legend_handles.append(
+                            plt.scatter([], [], s=d**2, c="grey", edgecolors="#555555", linewidth=0.5)
+                        )
+                    leg = g.ax_cbar.legend(
+                        legend_handles,
+                        [str(v) for v in legend_vals],
+                        title="Shared Features",
+                        bbox_to_anchor=(0.5, 1.15),
+                        loc="lower center",
+                        frameon=False,
+                        labelspacing=1.8,
+                        handletextpad=1.2,
+                        borderpad=0.5,
+                        scatterpoints=1,
+                    )
+                    leg.get_title().set_fontsize(9)
+                    leg.get_title().set_fontweight("bold")
+                    for t in leg.get_texts():
+                        t.set_fontsize(8)
+
         title = f"Age vs Dx Cell-Type Similarity\nModality: {modality.upper()}, Effect: {effect_column}"
         if feature_space != "global":
             title += f", Space: {feature_space.capitalize()}"
+        if plot_type != "heatmap":
+            title += f", Type: {plot_type.capitalize()}"
         g.ax_heatmap.set_title(
             title,
             pad=20,
