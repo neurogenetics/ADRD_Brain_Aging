@@ -63,6 +63,18 @@ for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/celltype_target_effect_similarity.py --modality ${MODALITY}
 done
 
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/celltype_target_effect_similarity.py --modality ${MODALITY} --feature-space pairwise
+done
+
+## intersect of significant features as dotplot
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/celltype_target_effect_similarity.py \
+    --modality ${MODALITY} \
+    --feature-space pairwise \
+    --plot-type dotplot
+done
+
 # power analysis of this study
 # min sample sizes used per modality
 uv run phase2/analyses/regression_power_analysis.py --sizes 8,15
@@ -105,6 +117,13 @@ uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /m
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Glia-Sin.csv --name clocksites_Tong2024_Glia-Sin &
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-In.csv --name clocksites_Tong2024_Neu-In &
 uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Tong2024_Neu-Sin.csv --name clocksites_Tong2024_Neu-Sin &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Levine2018.csv --name clocksites_Levine2018 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Hannum2013.csv --name clocksites_Hannum2013 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_McEwen2020.csv --name clocksites_McEwen2020 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Horvath2018.csv --name clocksites_Horvath2018 &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Zhang2019_BLUP.csv --name clocksites_Zhang2019_BLUP &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Zhang2019_EN.csv --name clocksites_Zhang2019_EN &
+uv run phase2/analyses/feature_enrichment.py --modality atac --annotation-csv /mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/DNAm/clocksites_annotation_Wu2019.csv --name clocksites_Wu2019 &
 
 # summarize the enrichment results and visualize
 uv run phase2/figures/summarize_metrics_enrichments.py
