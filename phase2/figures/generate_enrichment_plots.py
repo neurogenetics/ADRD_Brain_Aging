@@ -52,6 +52,7 @@ TOPIC_MAPS = {
         "Encode4_Promoter",
         "TEs",
     ],
+    "AD EWAS": ["Miao2026_AD_DMP", "Miao2026_AD_DMR"],
 }
 
 MIN_SIZE = 100

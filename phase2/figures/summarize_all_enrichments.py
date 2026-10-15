@@ -44,6 +44,7 @@ categories = {
             "Encode4_Proximal_enhancer",
             "Encode4_TF",
         ],
+        "AD EWAS": ["Miao2026_AD_DMP", "Miao2026_AD_DMR"],
     },
     "rna": {
         "Metrics & Specificity": ["gene_metrics", "cell_specific"],
