@@ -154,6 +154,9 @@ def main():
     summary_rows = []
 
     logger.info("Computing summary metrics per gene and cell type...")
+    # Pre-index endo_df for faster lookups
+    endo_indexed = endo_df.set_index(["tissue", "feature"])
+    
     for tissue, group in endo_df.groupby("tissue"):
         tissue_genes = group["feature"].unique()
 
@@ -166,18 +169,44 @@ def main():
             # Mediated if conditioned exposure p-value > alpha (loss of significance for exposure)
             mediated = this_cond[this_cond["exposure_pval"] > args.alpha]
             mediating_peak_count = mediated.shape[0]
+            
+            # Extract original effect sizes from endo_fdr_file
+            try:
+                row = endo_indexed.loc[(tissue, gene)]
+                # If there are duplicates, take the first one
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[0]
+                uncond_coef = row.get("coef", np.nan)
+                uncond_log2fc = row.get("log2fc", np.nan)
+            except KeyError:
+                uncond_coef = np.nan
+                uncond_log2fc = np.nan
 
             summary_rows.append(
                 {
                     "feature": gene,
                     "tissue": tissue,
+                    "uncond_coef": uncond_coef,
+                    "uncond_log2fc": uncond_log2fc,
                     "cis_cor_peaks": cis_cor_age_peaks,
                     "cis_cor_age_peaks": cis_cor_age_peaks,
                     "mediating_peak_count": mediating_peak_count,
+                    "is_attenuated": mediating_peak_count > 0,
                 }
             )
 
     summary_df = pd.DataFrame(summary_rows)
+
+    # Compute absolute magnitude. Prefer log2fc if available and non-NaN, else coef.
+    if "uncond_log2fc" in summary_df.columns and not summary_df["uncond_log2fc"].isna().all():
+        summary_df["abs_effect_magnitude"] = summary_df["uncond_log2fc"].abs()
+        effect_label = "Absolute log2FC"
+    elif "uncond_coef" in summary_df.columns:
+        summary_df["abs_effect_magnitude"] = summary_df["uncond_coef"].abs()
+        effect_label = "Absolute Coefficient"
+    else:
+        summary_df["abs_effect_magnitude"] = np.nan
+        effect_label = "Absolute Effect Size"
 
     # Compute proportions table
     this_list = []
@@ -411,6 +440,71 @@ def main():
         plt.savefig(f"{fig_cnt}.png", bbox_inches="tight")
         plt.savefig(f"{fig_cnt}.svg", bbox_inches="tight")
         plt.close()
+
+    # 4. Effect Magnitude Boxen Plot
+    fig_mag = (
+        figures_dir
+        / f"{args.project}.{args.endo_modality}-{args.exog_modality}.{args.regression_type}.conditioned.summary_magnitude{suffix}"
+    )
+    if not summary_df["abs_effect_magnitude"].isna().all():
+        logger.info("Generating effect magnitude boxen plot...")
+        
+        # Prepare data: map boolean to readable string
+        mag_df = summary_df.copy()
+        mag_df["Attenuation Status"] = mag_df["is_attenuated"].map({
+            True: "Attenuated",
+            False: "Not Attenuated"
+        })
+
+        plt.figure(figsize=(15, 9), dpi=100)
+        try:
+            sns.boxenplot(
+                x="tissue",
+                y="abs_effect_magnitude",
+                hue="Attenuation Status",
+                data=mag_df,
+                palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+                order=label_order,
+                width_method="exponential",
+                k_depth="trustworthy",
+            )
+        except TypeError:
+            sns.boxenplot(
+                x="tissue",
+                y="abs_effect_magnitude",
+                hue="Attenuation Status",
+                data=mag_df,
+                palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+                order=label_order,
+            )
+
+        sns.stripplot(
+            x="tissue",
+            y="abs_effect_magnitude",
+            hue="Attenuation Status",
+            data=mag_df,
+            dodge=True,
+            alpha=0.5,
+            jitter=True,
+            palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+            order=label_order,
+            legend=False,
+        )
+
+        plt.xticks(rotation=90)
+        plt.title(
+            f"Original {args.target_variable.upper()} Effect Magnitude by Attenuation Status",
+            fontsize="large",
+            weight="bold"
+        )
+        plt.xlabel("Cell types", weight="bold")
+        plt.ylabel(f"Original {effect_label}", weight="bold")
+        plt.tight_layout()
+        plt.savefig(f"{fig_mag}.png", bbox_inches="tight")
+        plt.savefig(f"{fig_mag}.svg", bbox_inches="tight")
+        plt.close()
+    else:
+        logger.info("No effect magnitude data available to plot.")
 
     logger.info("Summary and plotting completed.")
 
