@@ -148,7 +148,9 @@ def main():
     endo_df = pd.read_csv(endo_fdr_file)
     cond_df = pd.read_csv(cond_file)
 
-    logger.info(f"Loaded {len(endo_df)} endo {args.target_variable}-associated features.")
+    logger.info(
+        f"Loaded {len(endo_df)} endo {args.target_variable}-associated features."
+    )
     logger.info(f"Loaded {len(cond_df)} conditioned pairs.")
 
     summary_rows = []
@@ -156,7 +158,7 @@ def main():
     logger.info("Computing summary metrics per gene and cell type...")
     # Pre-index endo_df for faster lookups
     endo_indexed = endo_df.set_index(["tissue", "feature"])
-    
+
     for tissue, group in endo_df.groupby("tissue"):
         tissue_genes = group["feature"].unique()
 
@@ -169,7 +171,7 @@ def main():
             # Mediated if conditioned exposure p-value > alpha (loss of significance for exposure)
             mediated = this_cond[this_cond["exposure_pval"] > args.alpha]
             mediating_peak_count = mediated.shape[0]
-            
+
             # Extract original effect sizes from endo_fdr_file
             try:
                 row = endo_indexed.loc[(tissue, gene)]
@@ -198,7 +200,10 @@ def main():
     summary_df = pd.DataFrame(summary_rows)
 
     # Compute absolute magnitude. Prefer log2fc if available and non-NaN, else coef.
-    if "uncond_log2fc" in summary_df.columns and not summary_df["uncond_log2fc"].isna().all():
+    if (
+        "uncond_log2fc" in summary_df.columns
+        and not summary_df["uncond_log2fc"].isna().all()
+    ):
         summary_df["abs_effect_magnitude"] = summary_df["uncond_log2fc"].abs()
         effect_label = "Absolute log2FC"
     elif "uncond_coef" in summary_df.columns:
@@ -246,7 +251,9 @@ def main():
     cell_type_map = parse_cell_type_map(args.cell_type_map)
     if cell_type_map:
         logger.info(f"Applying cell-type mapping for display: {cell_type_map}")
-        mediated_proportions["tissue"] = mediated_proportions["tissue"].replace(cell_type_map)
+        mediated_proportions["tissue"] = mediated_proportions["tissue"].replace(
+            cell_type_map
+        )
         summary_df["tissue"] = summary_df["tissue"].replace(cell_type_map)
         cond_df["tissue"] = cond_df["tissue"].replace(cell_type_map)
 
@@ -432,7 +439,8 @@ def main():
         plt.ylim(bottom=0)
         plt.xticks(rotation=90)
         plt.title(
-            f"Number of cis proximal peaks that mediate {args.target_variable} effects", fontsize="large"
+            f"Number of cis proximal peaks that mediate {args.target_variable} effects",
+            fontsize="large",
         )
         plt.xlabel("Cell types")
         plt.ylabel(f"Number mediating cis proximal {args.exog_modality.upper()}")
@@ -448,22 +456,26 @@ def main():
     )
     if not summary_df["abs_effect_magnitude"].isna().all():
         logger.info("Generating effect magnitude boxen plot...")
-        
+
         # Prepare data: map boolean to readable string
         mag_df = summary_df.copy()
-        mag_df["Attenuation Status"] = mag_df["is_attenuated"].map({
-            True: "Attenuated",
-            False: "Not Attenuated"
-        })
+        mag_df["Attenuation Status"] = mag_df["is_attenuated"].map(
+            {True: "Attenuated", False: "Not Attenuated"}
+        )
 
         plt.figure(figsize=(15, 9), dpi=100)
+
+        # Accessible two-tone palette (Vibrant Cyan for Attenuated, Dark Slate for Not Attenuated)
+        hue_order = ["Attenuated", "Not Attenuated"]
+
         try:
             sns.boxenplot(
                 x="tissue",
                 y="abs_effect_magnitude",
                 hue="Attenuation Status",
+                hue_order=hue_order,
                 data=mag_df,
-                palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+                palette="colorblind",
                 order=label_order,
                 width_method="exponential",
                 k_depth="trustworthy",
@@ -473,8 +485,9 @@ def main():
                 x="tissue",
                 y="abs_effect_magnitude",
                 hue="Attenuation Status",
+                hue_order=hue_order,
                 data=mag_df,
-                palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+                palette="colorblind",
                 order=label_order,
             )
 
@@ -482,11 +495,12 @@ def main():
             x="tissue",
             y="abs_effect_magnitude",
             hue="Attenuation Status",
+            hue_order=hue_order,
             data=mag_df,
             dodge=True,
             alpha=0.5,
             jitter=True,
-            palette={"Attenuated": "#d95f02", "Not Attenuated": "#7570b3"},
+            palette="colorblind",
             order=label_order,
             legend=False,
         )
@@ -495,7 +509,7 @@ def main():
         plt.title(
             f"Original {args.target_variable.upper()} Effect Magnitude by Attenuation Status",
             fontsize="large",
-            weight="bold"
+            weight="bold",
         )
         plt.xlabel("Cell types", weight="bold")
         plt.ylabel(f"Original {effect_label}", weight="bold")
