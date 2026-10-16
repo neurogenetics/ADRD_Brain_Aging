@@ -180,9 +180,11 @@ def main():
                     row = row.iloc[0]
                 uncond_coef = row.get("coef", np.nan)
                 uncond_log2fc = row.get("log2fc", np.nan)
+                uncond_percentchange = row.get("percentchange", np.nan)
             except KeyError:
                 uncond_coef = np.nan
                 uncond_log2fc = np.nan
+                uncond_percentchange = np.nan
 
             summary_rows.append(
                 {
@@ -190,6 +192,7 @@ def main():
                     "tissue": tissue,
                     "uncond_coef": uncond_coef,
                     "uncond_log2fc": uncond_log2fc,
+                    "uncond_percentchange": uncond_percentchange,
                     "cis_cor_peaks": cis_cor_age_peaks,
                     "cis_cor_age_peaks": cis_cor_age_peaks,
                     "mediating_peak_count": mediating_peak_count,
@@ -199,8 +202,14 @@ def main():
 
     summary_df = pd.DataFrame(summary_rows)
 
-    # Compute absolute magnitude. Prefer log2fc if available and non-NaN, else coef.
+    # Compute absolute magnitude. Prefer percentchange if available, then log2fc, else coef.
     if (
+        "uncond_percentchange" in summary_df.columns
+        and not summary_df["uncond_percentchange"].isna().all()
+    ):
+        summary_df["abs_effect_magnitude"] = summary_df["uncond_percentchange"].abs()
+        effect_label = "Absolute Percent Change"
+    elif (
         "uncond_log2fc" in summary_df.columns
         and not summary_df["uncond_log2fc"].isna().all()
     ):
