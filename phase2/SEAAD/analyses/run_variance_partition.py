@@ -17,7 +17,7 @@ from pandas import DataFrame, read_csv, read_parquet, Series
 from tabulate import tabulate
 
 # Add legacy analyses folder to path to reuse variance_utils helpers
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent.parent / "analyses"))
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "analyses"))
 
 from variance_utils import (
     perform_variance_partition,

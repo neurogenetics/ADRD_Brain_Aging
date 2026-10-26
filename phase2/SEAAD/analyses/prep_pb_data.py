@@ -16,7 +16,7 @@ import pandas as pd
 from tabulate import tabulate
 
 # Add legacy analyses folder to path to reuse variance_utils helpers
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent.parent / "analyses"))
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "analyses"))
 
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer

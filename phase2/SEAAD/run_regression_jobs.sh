@@ -11,7 +11,7 @@ DATADIR="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 
 for CELLTYPE in ${CELLTYPES[@]}; do
   echo "Running: uv run phase2/analyses/pseudobulk_regression.py --modality ${MODALITY} --cell-type ${CELLTYPE} --regression-type ${REGRESSIONTYPE}"
-  uv run phase2/development/SEAAD/analyses/pseudobulk_regression.py --modality ${MODALITY} --cell-type ${CELLTYPE} \
+  uv run phase2/SEAAD/analyses/pseudobulk_regression.py --modality ${MODALITY} --cell-type ${CELLTYPE} \
     --regression-type ${REGRESSIONTYPE} --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
     --only-autosomal "$DATADIR"/quants/aging_phase2.features.csv &
 done

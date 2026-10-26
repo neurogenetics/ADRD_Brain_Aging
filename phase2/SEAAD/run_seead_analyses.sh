@@ -1,5 +1,5 @@
 # pull neccessary files, fragments and raw matrix, for SEA-AD from Synapse
-uv run python phase2/development/SEAAD/pull_synapse_filetypes.py
+uv run python phase2/SEAAD/pull_synapse_filetypes.py
 
 # detect ambient RNA
 # get the file IDs (suffix) to process
@@ -44,7 +44,7 @@ swarm -f /data/ADRD/brain_aging/phase2/scripts/seaad_retry_cellbender.swarm \
 # detect cell doublets for RNA
 DATADIR="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 while read SUFFIXID; do
-  uv run python /mnt/labshare/raph/working/ADRD_Brain_Aging/phase2/development/SEAAD/doublet_detection.py \
+  uv run python /mnt/labshare/raph/working/ADRD_Brain_Aging/phase2/SEAAD/doublet_detection.py \
     --input-file "$DATADIR"/public/seaad/cellbender/"$SUFFIXID"_cellbender_filtered.h5 \
     --output-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_rna_filtered.h5ad \
     --full-doublet-obs-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_rna_unfiltered_obs.csv \
@@ -54,7 +54,7 @@ done <"$DATADIR"/public/seaad/suffix_ids.list
 
 # quantify the chromatin peaks based on Phase2 Aging consensus peaks sed and detect doublets
 while read SUFFIXID; do
-  uv run python phase2/development/SEAAD/chromatin_peak_prep.py \
+  uv run python phase2/SEAAD/chromatin_peak_prep.py \
     --fragment-file "$DATADIR"/public/seaad/src_data/"$SUFFIXID"_atac_fragments.tsv.gz \
     --cpeaks-bed "$DATADIR"/src_data/aging_phase2_consensus_atac_peaks.bed \
     --output-file "$DATADIR"/public/seaad/doublet_det/"$SUFFIXID"_atac_filtered.h5ad \
@@ -76,13 +76,13 @@ while read SUFFIXID; do
 done <"$DATADIR"/public/seaad/suffix_ids.list
 
 # per sample combine the RNA and ATAC data into a mudata object, also integrate donor info into the obbs
-uv run python phase2/development/SEAAD/combine_modalities.py --output-dir "$DATADIR"/public/seaad
+uv run python phase2/SEAAD/combine_modalities.py --output-dir "$DATADIR"/public/seaad
 
 # combine the per sample mudata objects into a single cohort mudata object
-uv run python phase2/development/SEAAD/concat_mudata.py --output-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu
+uv run python phase2/SEAAD/concat_mudata.py --output-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu
 
 # do preliminary cell-type label assignments using Celltypist
-uv run python phase2/development/SEAAD/prep_celltypist_input.py \
+uv run python phase2/SEAAD/prep_celltypist_input.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --output-file "$DATADIR"/public/seaad/seaad_ec_rna_celltypist.h5ad \
   --detect-hv-features
@@ -101,14 +101,14 @@ singularity run \
   --prefix seaad_ec_rna_celltypist_PFC_ --outdir /data/public/seaad
 
 # check initial clustering based on only RNA
-uv run python phase2/development/SEAAD/initial_clustering_rna.py \
+uv run python phase2/SEAAD/initial_clustering_rna.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --output-file "$DATADIR"/public/seaad/seaad_ec_rna_clustered.h5ad \
   --model-dir "$DATADIR"/public/seaad/seaad_ec_rna_scvi \
   --detect-hv-features
 
 # integrate the cell-type predicted labels to the initial clustering
-uv run python phase2/development/SEAAD/annotate_clusters.py \
+uv run python phase2/SEAAD/annotate_clusters.py \
   --input-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_clustered.h5ad \
   --predictions-csv "$DATADIR"/public/seaad/seaad_ec_rna_celltypist_PFC_predicted_labels.csv \
   --output-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
@@ -116,7 +116,7 @@ uv run python phase2/development/SEAAD/annotate_clusters.py \
 
 # perform subclustering by broad cell-type
 ## excitatory neurons
-uv run python phase2/development/SEAAD/subcluster_rna.py \
+uv run python phase2/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_ExN_scvi \
@@ -127,7 +127,7 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --annotation-col celltype_major \
   --detect-hv-features
 ## inhibitory neurons
-uv run python phase2/development/SEAAD/subcluster_rna.py \
+uv run python phase2/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_InN_scvi \
@@ -138,7 +138,7 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --annotation-col celltype_major \
   --detect-hv-features
 ## non-neuronal
-uv run python phase2/development/SEAAD/subcluster_rna.py \
+uv run python phase2/SEAAD/subcluster_rna.py \
   --raw-input "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --processed-h5ad "$DATADIR"/public/seaad/seaad_ec_rna_annotated.h5ad \
   --model-dir "$DATADIR"/public/seaad/models/seaad_ec_NonNeuronal_scvi \
@@ -150,7 +150,7 @@ uv run python phase2/development/SEAAD/subcluster_rna.py \
   --detect-hv-features
 
 # integrate the SAHA cell-type labels into the mudata object
-uv run python phase2/development/SEAAD/integrate_saha_labels.py \
+uv run python phase2/SEAAD/integrate_saha_labels.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome.h5mu \
   --output-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
   --labels-file "$DATADIR"/public/seaad/resolution_selection/seaad_ec_all_celltypes_final_taxonomy.csv \
@@ -158,7 +158,7 @@ uv run python phase2/development/SEAAD/integrate_saha_labels.py \
   --label-cols broad_cell_type anno anno_coarse
 
 # model the RNA and ATAC using MultiVI
-uv run python phase2/development/SEAAD/multivi_modeling.py \
+uv run python phase2/SEAAD/multivi_modeling.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
   --output-file "$DATADIR"/public/seaad/seaad_ec_multiome_multivi.h5mu \
   --plot-cols sex diagnosis broad_cell_type anno anno_coarse \
@@ -169,7 +169,7 @@ uv run python phase2/development/SEAAD/multivi_modeling.py \
   --top-peaks 3500
 
 # convert to pseudobulk per cell-type
-uv run phase2/development/SEAAD/analyses/pseudobulk_convert.py \
+uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_labeled.h5mu \
   --project seaad_ec_multiome \
   --work-dir "$DATADIR"/public/seaad \
@@ -180,7 +180,7 @@ uv run phase2/development/SEAAD/analyses/pseudobulk_convert.py \
   --debug
 
 # format the initial knowns covariates by modality
-uv run phase2/development/SEAAD/analyses/format_covariates.py \
+uv run phase2/SEAAD/analyses/format_covariates.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_multivi.h5mu \
   --cell-type-col anno_coarse \
   --sample-col donor_id \
@@ -198,12 +198,12 @@ uv run phase2/analyses/rna_sex_check.py \
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do
-  phase2/development/SEAAD/run_prep_pb_jobs.sh prep_pb_data.py ${MODALITY}
+  phase2/SEAAD/run_prep_pb_jobs.sh prep_pb_data.py ${MODALITY}
 done
 
 # run the variance partition analyis per cell-type
 for MODALITY in ${MODALITIES[@]}; do
-  phase2/development/SEAAD/run_var_part_jobs.sh run_variance_partition.py ${MODALITY}
+  phase2/SEAAD/run_var_part_jobs.sh run_variance_partition.py ${MODALITY}
 done
 
 # since using WLS check cell-types and modalities for correlations between cell counts and age
@@ -214,7 +214,7 @@ uv run phase2/analyses/cell_counts_regression.py --target-variable dx \
 REGRESSTYPES="wls vwrlm"
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
-    phase2/development/SEAAD/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
+    phase2/SEAAD/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
   done
 done
 
@@ -313,7 +313,7 @@ uv run phase2/analyses/regression_power_analysis.py \
   --project seaad_ec_multiome
 
 # for age associated features see if there is correlation between gene ~ atac for chromatin peaks cis-proximal to the gene, using rna covariates
-uv run phase2/development/SEAAD/analyses/cis_correlation.py \
+uv run phase2/SEAAD/analyses/cis_correlation.py \
   --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
   --target-variable dx \
   --work-dir "$DATADIR"/public/seaad \
@@ -327,7 +327,7 @@ uv run phase2/figures/cis_correlation_summary.py \
   --project seaad_ec_multiome
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a conditioned analysis of these pairs, using rna covariates
-uv run phase2/development/SEAAD/analyses/cis_conditioned_regression.py \
+uv run phase2/SEAAD/analyses/cis_conditioned_regression.py \
   --endo-covariates specified --endo-covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
   --target-variable dx \
   --work-dir "$DATADIR"/public/seaad \
@@ -340,7 +340,7 @@ uv run phase2/figures/cis_conditioned_regression_summary.py \
   --project seaad_ec_multiome
 
 # for age associated features where the cis-proximal atac peaks are correlated with gene expression perform a conditioned analysis of these pairs, using rna covariates
-uv run phase2/development/SEAAD/analyses/cis_conditioned_regression.py \
+uv run phase2/SEAAD/analyses/cis_conditioned_regression.py \
   --endo-covariates specified --endo-covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
   --target-variable dx \
   --work-dir "$DATADIR"/public/seaad \

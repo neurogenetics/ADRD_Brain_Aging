@@ -11,7 +11,7 @@ DATADIR="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
 
 for CELLTYPE in ${CELLTYPES[@]}; do
   echo "Running: uv run phase2/development/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE}"
-  uv run phase2/development/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE} --features-file "$DATADIR"/quants/aging_phase2.features.csv &
+  uv run phase2/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE} --features-file "$DATADIR"/quants/aging_phase2.features.csv &
 done
 
 wait

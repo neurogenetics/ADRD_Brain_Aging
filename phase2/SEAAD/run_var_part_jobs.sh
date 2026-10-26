@@ -10,7 +10,7 @@ CELLTYPES="Astro BEC_venous ExN_CUX2 ExN_LAMP5 ExN_RELN ExN_RORB ExN_SEMA3E ExN_
 
 for CELLTYPE in ${CELLTYPES[@]}; do
   echo "Running: uv run phase2/development/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE}"
-  uv run phase2/development/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE} &
+  uv run phase2/SEAAD/analyses/${AGESCRIPTNAME} --modality ${MODALITY} --cell-type ${CELLTYPE} &
 done
 
 wait
