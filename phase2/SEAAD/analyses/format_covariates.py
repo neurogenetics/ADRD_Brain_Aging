@@ -41,6 +41,12 @@ def parse_args():
         help="Project name used for file prefixes.",
     )
     parser.add_argument(
+        "--output-prefix",
+        type=str,
+        default=None,
+        help="Optional prefix for output covariates files (defaults to --project).",
+    )
+    parser.add_argument(
         "--work-dir",
         type=str,
         default="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/public/seaad",
@@ -86,9 +92,10 @@ def main():
     info_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup dynamic logging file
+    out_prefix = args.output_prefix if args.output_prefix is not None else args.project
     log_dir = work_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file_path = log_dir / f"{args.project}_disease_format_covariates.log"
+    log_file_path = log_dir / f"{out_prefix}_disease_format_covariates.log"
 
     # Set up FileHandler for logging to the derived log file
     file_handler = logging.FileHandler(log_file_path, mode="w")
@@ -273,7 +280,7 @@ def main():
         peek_dataframe(out_df, f"Merged covariates for {modality}", debug)
 
         # Save covariates file
-        out_file = info_dir / f"{args.project}.covariates.{modality}.csv"
+        out_file = info_dir / f"{out_prefix}.covariates.{modality}.csv"
         out_df.to_csv(out_file)
         logger.info("Saved %s (Shape: %s)", out_file, out_df.shape)
 

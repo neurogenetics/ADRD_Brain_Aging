@@ -23,13 +23,27 @@ uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
   --exclude-ids H21.33.018,H21.33.001,H20.33.036 \
   --debug
 
+# format the initial knowns covariates by modality
+uv run phase2/SEAAD/analyses/format_covariates.py \
+  --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu \
+  --cell-type-col anno \
+  --sample-col donor_id \
+  --project seaad_ec_multiome \
+  --output-prefix seaad_ec_multiome.granular \
+  --work-dir "$DATADIR"/public/seaad \
+  --exclude-ids H21.33.018,H21.33.001,H20.33.036 \
+  --debug
+
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 CELLTYPE="ExN_CUX2_RELN"
 PROJECTNAME="seaad_ec_multiome"
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do
-  echo "Running: uv run phase2/SEAAD/analyses/prep_pb_data.py --modality ${MODALITY} --cell-type ${CELLTYPE}"
-  uv run phase2/SEAAD/analyses/prep_pb_data.py --modality ${MODALITY} --cell-type ${CELLTYPE} --features-file "$DATADIR"/quants/aging_phase2.features.csv &
+  uv run phase2/SEAAD/analyses/prep_pb_data.py \
+    --modality ${MODALITY} \
+    --cell-type ${CELLTYPE} \
+    --covariates-file "$DATADIR"/public/seaad/sample_info/seaad_ec_multiome.granular.covariates.${MODALITY}.csv \
+    --features-file "$DATADIR"/quants/aging_phase2.features.csv &
 done
 
 # run the variance partition analyis per cell-type

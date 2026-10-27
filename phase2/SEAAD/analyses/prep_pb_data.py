@@ -96,6 +96,12 @@ def parse_args():
         default=None,
         help="Optional path to an autosomal features file to override the default constructed path.",
     )
+    parser.add_argument(
+        "--covariates-file",
+        type=str,
+        default=None,
+        help="Optional path to a covariates CSV file to override the default constructed path.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug output.")
     return parser.parse_args()
 
@@ -113,9 +119,16 @@ def peek_dataframe(df: pd.DataFrame, message: str = None, verbose: bool = False)
 
 
 def load_covariates(
-    info_dir: Path, project: str, modality: str, debug: bool = False
+    info_dir: Path,
+    project: str,
+    modality: str,
+    debug: bool = False,
+    covariates_file_override: str = None,
 ) -> pd.DataFrame:
-    covars_file = info_dir / f"{project}.covariates.{modality}.csv"
+    if covariates_file_override is not None:
+        covars_file = Path(covariates_file_override)
+    else:
+        covars_file = info_dir / f"{project}.covariates.{modality}.csv"
     covars_df = pd.read_csv(covars_file, index_col=0)
     peek_dataframe(covars_df, f"Loaded covariates file: {covars_file}", debug)
     return covars_df
@@ -330,7 +343,13 @@ def main():
     title_suffix = f"{cell_type} ({modality.upper()})"
 
     # Load covariates
-    covars_df = load_covariates(info_dir, args.project, modality, debug)
+    covars_df = load_covariates(
+        info_dir,
+        args.project,
+        modality,
+        debug,
+        covariates_file_override=args.covariates_file,
+    )
 
     # Filter out samples where the target variable is missing/NaN (not part of study)
     if args.target_variable not in covars_df.columns:
