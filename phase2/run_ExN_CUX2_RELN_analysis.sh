@@ -1,8 +1,10 @@
-# Analyze ExN CUX2 RELN in the SEA-AD EC data
+# Analyze ExN CUX2 RELN in the HBCC EC data for age and SEA-AD EC data for AD
+
+DATADIR="/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2"
+
 # since the SAHA analysis we have for the SEAAD EC data has the more granular cell-types already included can use existing utilites
 # since the many of the utilities will run for all cell-types at granularity speciefied, which we don't need, just the one subtype
 # subset the mudata object to the ExN CUX2 and then run utitlities specifying anno instead of anno_coarse
-# convert to pseudobulk per cell-type
 uv run python -c "
 import mudata as md
 data_dir = '/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2'
@@ -13,6 +15,11 @@ cux2_reln.obs.anno = cux2_reln.obs.anno.cat.remove_unused_categories()
 cux2_reln.write(f'{data_dir}/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu')
 "
 
+# for the HBCC EC data will need to subset previous ExN CUX2 cells import the more granular cell-type labels
+# to include ExN CUX2 RELN, etc. SAHA labels for the RNA cells and then train a classifier to predict the more
+# granular ExN CUX2 subtype labels for the ATAC cells
+
+# convert to pseudobulk per cell-type
 uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu \
   --project seaad_ec_multiome \
@@ -36,7 +43,6 @@ uv run phase2/SEAAD/analyses/format_covariates.py \
 
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 CELLTYPE="ExN_CUX2_RELN"
-PROJECTNAME="seaad_ec_multiome"
 MODALITIES="rna atac"
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/SEAAD/analyses/prep_pb_data.py \
@@ -48,48 +54,38 @@ done
 
 # run the variance partition analyis per cell-type
 for MODALITY in ${MODALITIES[@]}; do
-  phase2/SEAAD/run_var_part_jobs.sh run_variance_partition.py ${MODALITY}
+  uv run phase2/SEAAD/analyses/run_variance_partition.py --modality ${MODALITY} --cell-type ${CELLTYPE} &
 done
-
-# since using WLS check cell-types and modalities for correlations between cell counts and age
-uv run phase2/analyses/cell_counts_regression.py --target-variable dx \
-  --work-dir "$DATADIR"/public/seaad --project seaad_ec_multiome
 
 # run the age regression analysis per cell-type
 REGRESSTYPES="wls vwrlm"
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
-    phase2/SEAAD/run_regression_jobs.sh ${REGRESSTYPE} ${MODALITY}
+    uv run phase2/SEAAD/analyses/pseudobulk_regression.py --modality ${MODALITY} --cell-type ${CELLTYPE} \
+      --regression-type ${REGRESSTYPE} --covariates specified --covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
+      --only-autosomal "$DATADIR"/quants/aging_phase2.features.csv &
   done
 done
 
-# post process the age regressions
-for MODALITY in ${MODALITIES[@]}; do
-  for REGRESSTYPE in ${REGRESSTYPES[@]}; do
-    uv run phase2/analyses/post_pseudobulk_regression.py \
+# check the general regression against the robust to check for outlier driven results
+CELLTYPES="ExN_CUX2 ExN_CUX2_RELN"
+for CELLTYPE in ${CELLTYPES[@]}; do
+  for MODALITY in ${MODALITIES[@]}; do
+    uv run phase2/analyses/filter_regression_type_differences.py \
       --modality ${MODALITY} \
-      --regression-type ${REGRESSTYPE} \
+      --cell-type ${CELLTYPE} \
       --target-variable dx \
-      --no-volcano-per-celltype \
       --work-dir "$DATADIR"/public/seaad \
       --project seaad_ec_multiome
   done
 done
 
-# check the general regression against the robust to check for outlier driven results
+# visualize similarities of disease status effects between course and ganular cell-type
 for MODALITY in ${MODALITIES[@]}; do
-  uv run phase2/analyses/filter_regression_type_differences.py \
+  uv run phase2/figures/pairwise_celltype_effect_comparison.py \
     --modality ${MODALITY} \
-    --target-variable dx \
-    --work-dir "$DATADIR"/public/seaad \
-    --project seaad_ec_multiome
-done
-
-# visualize similarities of disease status effects between tissues
-## union of significant features as heatmap
-for MODALITY in ${MODALITIES[@]}; do
-  uv run phase2/figures/celltype_target_effect_similarity.py \
-    --modality ${MODALITY} \
+    --cell-type-1 ExN_CUX2 \
+    --cell-type-2 ${CELLTYPE} \
     --target-variable dx \
     --work-dir "$DATADIR"/public/seaad \
     --project seaad_ec_multiome
