@@ -338,6 +338,7 @@ def main():
     modality = args.modality
     cell_type = args.cell_type
     counts_term = f"{safe_ct}_counts"
+    probs_term = f"{safe_ct}_probs" if modality == "atac" else None
 
     out_figure_path = figs_dir / f"{args.project}_{safe_ct}_{modality}"
     title_suffix = f"{cell_type} ({modality.upper()})"
@@ -369,8 +370,10 @@ def main():
             filtered_len,
         )
 
-    # Ensure count term is filled
+    # Ensure count and probability terms are filled
     covars_df[counts_term] = covars_df[counts_term].fillna(0)
+    if probs_term and probs_term in covars_df.columns:
+        covars_df[probs_term] = covars_df[probs_term].fillna(0)
 
     # Load quantified parquet files
     quants_df = load_quantified_data(
@@ -382,7 +385,15 @@ def main():
     peek_dataframe(data_df, "merged covariates and quantifications", debug)
 
     # Build known covariates list
-    known_covariates = [args.target_variable] + args.known_covariates + [counts_term]
+    known_covariates = [args.target_variable] + list(args.known_covariates)
+    if counts_term not in known_covariates:
+        known_covariates.append(counts_term)
+    if (
+        probs_term
+        and probs_term in covars_df.columns
+        and probs_term not in known_covariates
+    ):
+        known_covariates.append(probs_term)
 
     # Model unobserved non-target variance regressing out the primary target variable first
     pca_df = generate_latent_features(
@@ -412,8 +423,10 @@ def main():
     )
     logger.info("Saving final covariates terms to %s", final_covariates_file)
 
-    # Rename cell type counts column to standardized term 'cell_counts'
+    # Rename cell type counts and probability columns to standardized terms
     rename_map = {counts_term: "cell_counts"}
+    if probs_term and probs_term in ext_data_df.columns:
+        rename_map[probs_term] = "label_probs"
     ext_data_df[final_covariates].rename(columns=rename_map).to_csv(
         final_covariates_file
     )

@@ -109,180 +109,312 @@ def main():
     logger.info("=== Starting Disease Covariates Formatting ===")
     logger.info("Logging dynamically routed to file: %s", log_file_path)
 
-    logger.info("Loading MuData object from: %s", args.input_file)
+    logger.info("Loading input object from: %s", args.input_file)
     try:
         mdata = md.read(args.input_file)
     except Exception as e:
-        logger.error("Failed to read input MuData file: %s", str(e))
+        logger.error("Failed to read input file: %s", str(e))
         sys.exit(1)
 
-    # Ensure required obs columns are present in global mdata.obs by pulling from modalities if needed
-    required_cols = [
-        "diagnosis",
-        args.sample_col,
-        args.cell_type_col,
-        "sex",
-        "race",
-        "ageDeath",
-        "PMI",
-        "pH",
-        "brainWeight",
-    ]
-    for col in required_cols:
-        if col not in mdata.obs.columns:
-            for mod_name, mod_obj in mdata.mod.items():
-                if col in mod_obj.obs.columns:
-                    mdata.obs[col] = mod_obj.obs[col].reindex(mdata.obs.index)
-                    logger.info(
-                        "  -> Pulled missing column '%s' from modality '%s' into global .obs",
-                        col,
-                        mod_name,
-                    )
-                    break
+    is_mudata = hasattr(mdata, "mod")
 
-    # Exclude specified sample IDs
-    if args.exclude_ids:
-        exclude_ids = [x.strip() for x in args.exclude_ids.split(",")]
-        logger.info("Excluding sample IDs: %s", exclude_ids)
-        if args.sample_col in mdata.obs.columns:
-            mdata = mdata[~mdata.obs[args.sample_col].isin(exclude_ids)].copy()
-        else:
-            logger.warning(
-                "sample_col '%s' not found in mdata.obs, skipping exclusion.",
-                args.sample_col,
-            )
+    if is_mudata:
+        # Ensure required obs columns are present in global mdata.obs by pulling from modalities if needed
+        required_cols = [
+            "diagnosis",
+            args.sample_col,
+            args.cell_type_col,
+            "sex",
+            "race",
+            "ageDeath",
+            "PMI",
+            "pH",
+            "brainWeight",
+        ]
+        for col in required_cols:
+            if col not in mdata.obs.columns:
+                for mod_name, mod_obj in mdata.mod.items():
+                    if col in mod_obj.obs.columns:
+                        mdata.obs[col] = mod_obj.obs[col].reindex(mdata.obs.index)
+                        logger.info(
+                            "  -> Pulled missing column '%s' from modality '%s' into global .obs",
+                            col,
+                            mod_name,
+                        )
+                        break
 
-    # Feature Engineer 'dx' column from 'diagnosis'
-    if "diagnosis" not in mdata.obs.columns:
-        logger.error("Required 'diagnosis' column not found in MuData global .obs.")
-        sys.exit(1)
-
-    logger.info("Engineering 'dx' binary variable from 'diagnosis'...")
-    mdata.obs["dx"] = np.nan
-    mdata.obs.loc[mdata.obs["diagnosis"] == "control,no cognitive impairment", "dx"] = 0
-    mdata.obs.loc[
-        mdata.obs["diagnosis"].isin(
-            [
-                "Alzheimer disease,dementia",
-                "Alzheimer disease,dementia,Lewy body disease",
-            ]
-        ),
-        "dx",
-    ] = 1
-    # Convert 'dx' to nullable integer Int64 to prevent it from saving as float (0.0 / 1.0)
-    mdata.obs["dx"] = mdata.obs["dx"].astype("Int64")
-
-    # Extract sample covariates
-    sample_col = args.sample_col
-    keep_terms = [
-        sample_col,
-        "dx",
-        "sex",
-        "race",
-        "ageDeath",
-        "PMI",
-        "pH",
-        "brainWeight",
-    ]
-
-    # Filter terms actually present in the mudata obs
-    present_terms = [col for col in keep_terms if col in mdata.obs.columns]
-    missing_terms = [col for col in keep_terms if col not in mdata.obs.columns]
-    if missing_terms:
-        logger.warning(
-            "The following requested covariates were not found in MuData obs: %s",
-            missing_terms,
-        )
-
-    logger.info("Extracting and deduplicating covariates at sample level...")
-    covars_df = (
-        mdata.obs[present_terms]
-        .drop_duplicates(subset=[sample_col])
-        .reset_index(drop=True)
-    )
-    covars_df = covars_df.set_index(sample_col)
-    peek_dataframe(covars_df, "Sample covariates extracted", debug)
-
-    # Impute missing values for numeric covariates using column means to prevent sample dropping
-    numeric_cols = ["ageDeath", "PMI", "pH", "brainWeight"]
-    for col in numeric_cols:
-        if col in covars_df.columns:
-            # Handle special privacy-censored '90+' values for age
-            col_str = covars_df[col].astype(str).str.strip()
-            
-            # Identify '90+' entries
-            mask = col_str == "90+"
-            if mask.any():
-                # Generate unique random ages in range [91.0, 96.0]
-                random_ages = np.random.uniform(91.0, 96.0, size=mask.sum()).round(3)
-                col_str.loc[mask] = random_ages.astype(str)
-                logger.info("Replaced %d privacy-censored '90+' values in '%s' with random ages in range [91, 96]", mask.sum(), col)
-            
-            # Force conversion to numeric (coercing non-numeric strings to NaNs)
-            covars_df[col] = pd.to_numeric(col_str, errors="coerce")
-            
-            col_mean = covars_df[col].mean()
-            if pd.notna(col_mean):
-                missing_cnt = covars_df[col].isna().sum()
-                if missing_cnt > 0:
-                    logger.info(
-                        "Imputing %d missing values in '%s' with mean %.3f",
-                        missing_cnt,
-                        col,
-                        col_mean,
-                    )
-                    covars_df[col] = covars_df[col].fillna(col_mean).round(3)
-
-    if debug:
-        print(covars_df.describe())
-        print(covars_df["dx"].value_counts(dropna=False))
-
-    # Calculate modality-specific cell counts
-    for modality in ["rna", "atac"]:
-        if modality not in mdata.mod:
-            logger.warning(
-                "Modality '%s' not found in MuData object. Skipping count formatting.",
-                modality,
-            )
-            continue
-
-        logger.info("Formatting covariates file for modality: %s", modality)
-        adata_modal = mdata.mod[modality].copy()
-
-        # Ensure cell type and sample id are present in modality obs
-        for col in [args.cell_type_col, args.sample_col]:
-            if col in mdata.obs.columns:
-                adata_modal.obs[col] = mdata.obs[col].reindex(adata_modal.obs.index)
-
-        # Apply exclusion list at modality level just in case
+        # Exclude specified sample IDs
         if args.exclude_ids:
-            adata_modal = adata_modal[
-                ~adata_modal.obs[args.sample_col].isin(exclude_ids)
-            ].copy()
+            exclude_ids = [x.strip() for x in args.exclude_ids.split(",")]
+            logger.info("Excluding sample IDs: %s", exclude_ids)
+            if args.sample_col in mdata.obs.columns:
+                mdata = mdata[~mdata.obs[args.sample_col].isin(exclude_ids)].copy()
+            else:
+                logger.warning(
+                    "sample_col '%s' not found in mdata.obs, skipping exclusion.",
+                    args.sample_col,
+                )
 
-        # Calculate cell counts per sample per cell type
-        donor_counts = adata_modal.obs.groupby(
-            [args.cell_type_col, args.sample_col], observed=True
-        ).size()
-        donor_counts_df = donor_counts.unstack(level=0).fillna(0)
-        donor_counts_df.columns.name = None
-        donor_counts_df.index.name = None
-        # Replace spaces/special chars and append suffix
-        donor_counts_df.columns = [
-            f"{x.replace(' ', '_').replace('/', '-')}_counts"
-            for x in donor_counts_df.columns
+        # Feature Engineer 'dx' column from 'diagnosis'
+        if "diagnosis" not in mdata.obs.columns:
+            logger.error("Required 'diagnosis' column not found in MuData global .obs.")
+            sys.exit(1)
+
+        logger.info("Engineering 'dx' binary variable from 'diagnosis'...")
+        mdata.obs["dx"] = np.nan
+        mdata.obs.loc[
+            mdata.obs["diagnosis"] == "control,no cognitive impairment", "dx"
+        ] = 0
+        mdata.obs.loc[
+            mdata.obs["diagnosis"].isin(
+                [
+                    "Alzheimer disease,dementia",
+                    "Alzheimer disease,dementia,Lewy body disease",
+                ]
+            ),
+            "dx",
+        ] = 1
+        # Convert 'dx' to nullable integer Int64 to prevent it from saving as float (0.0 / 1.0)
+        mdata.obs["dx"] = mdata.obs["dx"].astype("Int64")
+
+        # Extract sample covariates
+        sample_col = args.sample_col
+        keep_terms = [
+            sample_col,
+            "dx",
+            "sex",
+            "race",
+            "ageDeath",
+            "PMI",
+            "pH",
+            "brainWeight",
         ]
 
-        # Merge pivoted counts with covariates
-        out_df = covars_df.merge(
-            donor_counts_df, how="inner", left_index=True, right_index=True
-        )
-        peek_dataframe(out_df, f"Merged covariates for {modality}", debug)
+        # Filter terms actually present in the mudata obs
+        present_terms = [col for col in keep_terms if col in mdata.obs.columns]
+        missing_terms = [col for col in keep_terms if col not in mdata.obs.columns]
+        if missing_terms:
+            logger.warning(
+                "The following requested covariates were not found in MuData obs: %s",
+                missing_terms,
+            )
 
-        # Save covariates file
-        out_file = info_dir / f"{out_prefix}.covariates.{modality}.csv"
-        out_df.to_csv(out_file)
-        logger.info("Saved %s (Shape: %s)", out_file, out_df.shape)
+        logger.info("Extracting and deduplicating covariates at sample level...")
+        covars_df = (
+            mdata.obs[present_terms]
+            .drop_duplicates(subset=[sample_col])
+            .reset_index(drop=True)
+        )
+        covars_df = covars_df.set_index(sample_col)
+        peek_dataframe(covars_df, "Sample covariates extracted", debug)
+
+        # Impute missing values for numeric covariates using column means to prevent sample dropping
+        numeric_cols = ["ageDeath", "PMI", "pH", "brainWeight"]
+        for col in numeric_cols:
+            if col in covars_df.columns:
+                # Handle special privacy-censored '90+' values for age
+                col_str = covars_df[col].astype(str).str.strip()
+
+                # Identify '90+' entries
+                mask = col_str == "90+"
+                if mask.any():
+                    # Generate unique random ages in range [91.0, 96.0]
+                    random_ages = np.random.uniform(91.0, 96.0, size=mask.sum()).round(3)
+                    col_str.loc[mask] = random_ages.astype(str)
+                    logger.info(
+                        "Replaced %d privacy-censored '90+' values in '%s' with random ages in range [91, 96]",
+                        mask.sum(),
+                        col,
+                    )
+
+                # Force conversion to numeric (coercing non-numeric strings to NaNs)
+                covars_df[col] = pd.to_numeric(col_str, errors="coerce")
+
+                col_mean = covars_df[col].mean()
+                if pd.notna(col_mean):
+                    missing_cnt = covars_df[col].isna().sum()
+                    if missing_cnt > 0:
+                        logger.info(
+                            "Imputing %d missing values in '%s' with mean %.3f",
+                            missing_cnt,
+                            col,
+                            col_mean,
+                        )
+                        covars_df[col] = covars_df[col].fillna(col_mean).round(3)
+
+        if debug:
+            print(covars_df.describe())
+            print(covars_df["dx"].value_counts(dropna=False))
+
+        # Calculate modality-specific cell counts
+        for modality in ["rna", "atac"]:
+            if modality not in mdata.mod:
+                logger.warning(
+                    "Modality '%s' not found in MuData object. Skipping count formatting.",
+                    modality,
+                )
+                continue
+
+            logger.info("Formatting covariates file for modality: %s", modality)
+            adata_modal = mdata.mod[modality].copy()
+
+            # Ensure cell type and sample id are present in modality obs
+            for col in [args.cell_type_col, args.sample_col]:
+                if col in mdata.obs.columns:
+                    adata_modal.obs[col] = mdata.obs[col].reindex(adata_modal.obs.index)
+
+            # Apply exclusion list at modality level just in case
+            if args.exclude_ids:
+                adata_modal = adata_modal[
+                    ~adata_modal.obs[args.sample_col].isin(exclude_ids)
+                ].copy()
+
+            # Calculate cell counts per sample per cell type
+            donor_counts = adata_modal.obs.groupby(
+                [args.cell_type_col, args.sample_col], observed=True
+            ).size()
+            donor_counts_df = donor_counts.unstack(level=0).fillna(0)
+            donor_counts_df.columns.name = None
+            donor_counts_df.index.name = None
+            # Replace spaces/special chars and append suffix
+            donor_counts_df.columns = [
+                f"{x.replace(' ', '_').replace('/', '-')}_counts"
+                for x in donor_counts_df.columns
+            ]
+
+            # Merge pivoted counts with covariates
+            out_df = covars_df.merge(
+                donor_counts_df, how="inner", left_index=True, right_index=True
+            )
+            peek_dataframe(out_df, f"Merged covariates for {modality}", debug)
+
+            # Save covariates file
+            out_file = info_dir / f"{out_prefix}.covariates.{modality}.csv"
+            out_df.to_csv(out_file)
+            logger.info("Saved %s (Shape: %s)", out_file, out_df.shape)
+    else:
+        # AnnData (HBCC / MultiVI format)
+        if args.exclude_ids:
+            exclude_ids = [x.strip() for x in args.exclude_ids.split(",")]
+            logger.info("Excluding sample IDs: %s", exclude_ids)
+            if args.sample_col in mdata.obs.columns:
+                mdata = mdata[~mdata.obs[args.sample_col].isin(exclude_ids)].copy()
+            else:
+                logger.warning(
+                    "sample_col '%s' not found in AnnData.obs, skipping exclusion.",
+                    args.sample_col,
+                )
+
+        sample_col = args.sample_col
+        keep_terms = [
+            sample_col,
+            "sex",
+            "ancestry",
+            "age",
+            "gex_pool",
+            "atac_pool",
+            "pmi",
+            "ph",
+            "smoker",
+            "bmi",
+        ]
+        present_terms = [col for col in keep_terms if col in mdata.obs.columns]
+        missing_terms = [col for col in keep_terms if col not in mdata.obs.columns]
+        if missing_terms:
+            logger.warning(
+                "The following requested covariates were not found in AnnData obs: %s",
+                missing_terms,
+            )
+
+        logger.info("Extracting and deduplicating covariates at sample level...")
+        covars_df = (
+            mdata.obs[present_terms]
+            .drop_duplicates(subset=[sample_col])
+            .reset_index(drop=True)
+        )
+        covars_df = covars_df.set_index(sample_col)
+        peek_dataframe(covars_df, "Sample covariates extracted", debug)
+
+        if "smoker" in covars_df.columns:
+            covars_df["smoker"] = covars_df["smoker"].fillna(0)
+            covars_df["smoker"] = np.where(covars_df["smoker"] == 1, "yes", "no")
+        if "bmi" in covars_df.columns:
+            covars_df["bmi"] = covars_df["bmi"].fillna(covars_df["bmi"].mean().round(1))
+        if "ancestry" in covars_df.columns:
+            if isinstance(covars_df["ancestry"].dtype, pd.CategoricalDtype):
+                if "Other" not in covars_df["ancestry"].cat.categories:
+                    covars_df["ancestry"] = covars_df["ancestry"].cat.add_categories(
+                        "Other"
+                    )
+            covars_df.loc[
+                ~covars_df["ancestry"].isin(["African American", "Caucasian"]),
+                "ancestry",
+            ] = "Other"
+
+        for modality in ["rna", "atac"]:
+            logger.info("Formatting covariates file for modality: %s", modality)
+            mod_covars_df = covars_df.copy()
+
+            if modality == "rna":
+                if "gex_pool" in mod_covars_df.columns:
+                    mod_covars_df["pool"] = mod_covars_df["gex_pool"]
+                cell_info_obs = mdata.obs.loc[
+                    mdata.obs["modality"].isin(["expression", "paired"])
+                ].copy()
+                cell_probs_df = None
+            else:
+                if "atac_pool" in mod_covars_df.columns:
+                    mod_covars_df["pool"] = mod_covars_df["atac_pool"]
+                cell_info_obs = mdata.obs.loc[
+                    mdata.obs["modality"].isin(["accessibility", "paired"])
+                ].copy()
+                if "label_prob" in cell_info_obs.columns:
+                    cell_info_obs.loc[
+                        cell_info_obs["modality"] == "paired", "label_prob"
+                    ] = 1
+                    cell_label_probs = (
+                        cell_info_obs.groupby(
+                            [args.cell_type_col, sample_col], observed=True
+                        )["label_prob"]
+                        .mean()
+                        .round(3)
+                    )
+                    cell_probs_df = cell_label_probs.unstack(level=0).fillna(0)
+                    cell_probs_df.columns.name = None
+                    cell_probs_df.index.name = None
+                    cell_probs_df.columns = [
+                        f"{x.replace(' ', '_').replace('/', '-')}_probs"
+                        for x in cell_probs_df.columns
+                    ]
+                else:
+                    cell_probs_df = None
+
+            donor_counts = cell_info_obs.groupby(
+                [args.cell_type_col, sample_col], observed=True
+            ).size()
+            donor_counts_df = donor_counts.unstack(level=0).fillna(0)
+            donor_counts_df.columns.name = None
+            donor_counts_df.index.name = None
+            donor_counts_df.columns = [
+                f"{x.replace(' ', '_').replace('/', '-')}_counts"
+                for x in donor_counts_df.columns
+            ]
+
+            mod_covars_df = mod_covars_df.drop(
+                columns=["gex_pool", "atac_pool"], errors="ignore"
+            )
+            out_df = mod_covars_df.merge(
+                donor_counts_df, how="inner", left_index=True, right_index=True
+            )
+            if cell_probs_df is not None:
+                out_df = out_df.merge(
+                    cell_probs_df, how="inner", left_index=True, right_index=True
+                )
+
+            peek_dataframe(out_df, f"Merged covariates for {modality}", debug)
+            out_file = info_dir / f"{out_prefix}.covariates.{modality}.csv"
+            out_df.to_csv(out_file)
+            logger.info("Saved %s (Shape: %s)", out_file, out_df.shape)
 
     logger.info("=== Disease Covariates Formatting Finished Successfully ===")
 

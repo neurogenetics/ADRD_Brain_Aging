@@ -30,17 +30,24 @@ MIN_CELLS_ATAC = 20
 MIN_CELLS_PROP = 0.30
 TARGET_SUM_NORM = 1e6
 
+# MultiVI AnnData modality mappings
+ANNDATA_VAR_MODALITY = {"rna": "Gene Expression", "atac": "Peaks"}
+ANNDATA_OBS_MODALITY = {
+    "rna": ["expression", "paired"],
+    "atac": ["accessibility", "paired"],
+}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Convert single-cell MuData to pseudobulk profiles for disease analysis."
+        description="Convert single-cell MuData or AnnData to pseudobulk profiles."
     )
     parser.add_argument(
         "-i",
         "--input-file",
         type=str,
         required=True,
-        help="Path to the input MuData (.h5mu) file.",
+        help="Path to the input MuData (.h5mu) or AnnData (.h5ad) file.",
     )
     parser.add_argument(
         "-o",
@@ -211,19 +218,47 @@ def main():
 
     # Process each modality
     for modality in ["rna", "atac"]:
-        if modality not in mdata.mod:
-            logger.warning(
-                "Modality '%s' not found in MuData object. Skipping.", modality
+        if hasattr(mdata, "mod"):
+            if modality not in mdata.mod:
+                logger.warning(
+                    "Modality '%s' not found in MuData object. Skipping.", modality
+                )
+                continue
+
+            logger.info("Processing MuData modality: %s", modality)
+            adata_modal = mdata.mod[modality].copy()
+
+            # Ensure cell type and sample id are present in modality obs
+            for col in [args.cell_type_col, args.sample_col]:
+                if col in mdata.obs.columns:
+                    adata_modal.obs[col] = mdata.obs[col].reindex(adata_modal.obs.index)
+        else:
+            if "modality" not in mdata.obs.columns or "modality" not in mdata.var.columns:
+                logger.error(
+                    "Input AnnData object must contain 'modality' in both .obs and .var."
+                )
+                sys.exit(1)
+
+            obs_modalities = ANNDATA_OBS_MODALITY.get(modality, [])
+            var_modality = ANNDATA_VAR_MODALITY.get(modality)
+            logger.info(
+                "Subsetting AnnData for modality '%s' (obs.modality in %s, var.modality == '%s')...",
+                modality,
+                obs_modalities,
+                var_modality,
             )
-            continue
+            adata_modal = mdata[
+                mdata.obs["modality"].isin(obs_modalities),
+                mdata.var["modality"] == var_modality,
+            ].copy()
 
-        logger.info("Processing modality: %s", modality)
-        adata_modal = mdata.mod[modality].copy()
-
-        # Ensure cell type and sample id are present in modality obs
-        for col in [args.cell_type_col, args.sample_col]:
-            if col in mdata.obs.columns:
-                adata_modal.obs[col] = mdata.obs[col].reindex(adata_modal.obs.index)
+            if adata_modal.n_obs == 0 or adata_modal.n_vars == 0:
+                logger.warning(
+                    "No cells or features found in AnnData for modality '%s' (shape: %s). Skipping.",
+                    modality,
+                    adata_modal.shape,
+                )
+                continue
 
         # Validate that required columns exist
         if args.cell_type_col not in adata_modal.obs.columns:

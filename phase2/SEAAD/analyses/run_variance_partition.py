@@ -326,14 +326,30 @@ def main():
     peek_dataframe(data_df, "merged covariates and quantifications", debug)
 
     logger.info("--- Starting Initial Variance Partition (Known Covariates) ---")
-    
-    # Identify known and categorical covariates
-    # In disease study, the user covariates are sex, race, ageDeath, PMI, pH, brainWeight, cell_counts
-    check_covariates = ["sex", "race", "ageDeath", "PMI", "pH", "brainWeight", "cell_counts"]
+
+    import pandas as pd
+
+    # Identify known and categorical covariates dynamically from args.known_covariates
+    check_covariates = [c for c in args.known_covariates if c in data_df.columns]
+    if "cell_counts" in data_df.columns and "cell_counts" not in check_covariates:
+        check_covariates.append("cell_counts")
+    if (
+        modality == "atac"
+        and "label_probs" in data_df.columns
+        and "label_probs" not in check_covariates
+    ):
+        check_covariates.append("label_probs")
+
     check_correlations(data_df, args.target_variable, check_covariates, verbose=True)
 
-    fixed_effects = [args.target_variable, "ageDeath", "PMI", "pH", "brainWeight", "cell_counts"]
-    random_effects = ["sex", "race"]
+    categorical_covars = {"sex", "race", "pool", "ancestry", "smoker"}
+    fixed_effects = [args.target_variable]
+    random_effects = []
+    for cov in check_covariates:
+        if cov in categorical_covars or not pd.api.types.is_numeric_dtype(data_df[cov]):
+            random_effects.append(cov)
+        else:
+            fixed_effects.append(cov)
 
     results = run_variance_partition_parallel(
         data_df, quants_df.columns.tolist(), fixed_effects, random_effects, debug

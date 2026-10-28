@@ -27,8 +27,25 @@ uv run phase2/quantifications/predict_subtypes_from_multivi.py \
   --label-col final_anno_subclust \
   --output-file "$DATADIR"/quants/aging_phase2.ExN_CUX2.multivi.annotated.h5ad \
   --debug
+# transfer the predicted ExN CUX2 subtype labels to the raw input for these cells
+uv run python -c "
+import sys
+from pathlib import Path
+sys.path.append('phase2/analyses')
+from pseudobulk_convert import load_and_prep_data
+
+quants_dir = Path('/mnt/labshare/raph/datasets/adrd_neuro/brain_aging/phase2/quants')
+raw_file = quants_dir / 'aging_phase2.raw.multivi_prep.h5ad'
+annot_file = quants_dir / 'aging_phase2.ExN_CUX2.multivi.annotated.h5ad'
+out_file = quants_dir / 'aging_phase2.ExN_CUX2.raw.subtype_labels.h5ad'
+
+adata_raw, _ = load_and_prep_data(raw_file, annot_file, debug=True)
+adata_raw.write(out_file)
+print(f'Saved: {out_file}')
+"
 
 # convert to pseudobulk per cell-type
+## SEA-AD
 uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu \
   --project seaad_ec_multiome \
@@ -38,8 +55,18 @@ uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
   --aggregate-type sum \
   --exclude-ids H21.33.018,H21.33.001,H20.33.036 \
   --debug
+## HBCC
+uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
+  --input-file "$DATADIR"/quants/aging_phase2.ExN_CUX2.raw.subtype_labels.h5ad \
+  --project aging_phase2 \
+  --work-dir "$DATADIR" \
+  --cell-type-col cell_label \
+  --sample-col sample_id \
+  --aggregate-type sum \
+  --exclude-ids Aging134
 
 # format the initial knowns covariates by modality
+## SEA-AD
 uv run phase2/SEAAD/analyses/format_covariates.py \
   --input-file "$DATADIR"/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu \
   --cell-type-col anno \
@@ -49,10 +76,20 @@ uv run phase2/SEAAD/analyses/format_covariates.py \
   --work-dir "$DATADIR"/public/seaad \
   --exclude-ids H21.33.018,H21.33.001,H20.33.036 \
   --debug
+## HBCC
+uv run phase2/SEAAD/analyses/format_covariates.py \
+  --input-file "$DATADIR"/quants/aging_phase2.ExN_CUX2.raw.subtype_labels.h5ad \
+  --cell-type-col cell_label \
+  --sample-col sample_id \
+  --project aging_phase2 \
+  --output-prefix aging_phase2.ExN_CUX2_subtypes \
+  --work-dir "$DATADIR" \
+  --exclude-ids Aging134
 
 # run the per cell-type pseudobulk data prep and generate non-target variance components
 CELLTYPE="ExN_CUX2_RELN"
 MODALITIES="rna atac"
+## SEA-AD
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/SEAAD/analyses/prep_pb_data.py \
     --modality ${MODALITY} \
@@ -60,14 +97,40 @@ for MODALITY in ${MODALITIES[@]}; do
     --covariates-file "$DATADIR"/public/seaad/sample_info/seaad_ec_multiome.granular.covariates.${MODALITY}.csv \
     --features-file "$DATADIR"/quants/aging_phase2.features.csv &
 done
+## HBCC
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/SEAAD/analyses/prep_pb_data.py \
+    --project aging_phase2 \
+    --work-dir "$DATADIR" \
+    --modality "${MODALITY}" \
+    --cell-type "${CELLTYPE}" \
+    --target-variable age \
+    --known-covariates sex ancestry pmi ph smoker bmi pool \
+    --covariates-file "$DATADIR"/sample_info/aging_phase2.ExN_CUX2_subtypes.covariates.${MODALITY}.csv \
+    --features-file "$DATADIR"/quants/aging_phase2.features.csv &
+done
+wait
 
 # run the variance partition analyis per cell-type
+## SEA-AD
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/SEAAD/analyses/run_variance_partition.py --modality ${MODALITY} --cell-type ${CELLTYPE} &
 done
+## HBCC
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/SEAAD/analyses/run_variance_partition.py \
+    --project aging_phase2 \
+    --work-dir "$DATADIR" \
+    --modality "${MODALITY}" \
+    --cell-type "${CELLTYPE}" \
+    --target-variable age \
+    --known-covariates sex ancestry pmi ph smoker bmi pool &
+done
+wait
 
 # run the age regression analysis per cell-type
 REGRESSTYPES="wls vwrlm"
+## SEA-AD
 for MODALITY in ${MODALITIES[@]}; do
   for REGRESSTYPE in ${REGRESSTYPES[@]}; do
     uv run phase2/SEAAD/analyses/pseudobulk_regression.py --modality ${MODALITY} --cell-type ${CELLTYPE} \
@@ -75,9 +138,26 @@ for MODALITY in ${MODALITIES[@]}; do
       --only-autosomal "$DATADIR"/quants/aging_phase2.features.csv &
   done
 done
+## HBCC
+for MODALITY in ${MODALITIES[@]}; do
+  for REGRESSTYPE in ${REGRESSTYPES[@]}; do
+    uv run phase2/SEAAD/analyses/pseudobulk_regression.py \
+      --project aging_phase2 \
+      --work-dir "$DATADIR" \
+      --modality "${MODALITY}" \
+      --cell-type "${CELLTYPE}" \
+      --target-variable age \
+      --regression-type "${REGRESSTYPE}" \
+      --covariates specified \
+      --covariates-list PCA_0 PCA_1 PCA_2 PCA_3 \
+      --only-autosomal "$DATADIR"/quants/aging_phase2.features.csv &
+  done
+done
+wait
 
 # check the general regression against the robust to check for outlier driven results
 CELLTYPES="ExN_CUX2 ExN_CUX2_RELN"
+## SEA-AD
 for CELLTYPE in ${CELLTYPES[@]}; do
   for MODALITY in ${MODALITIES[@]}; do
     uv run phase2/analyses/filter_regression_type_differences.py \
@@ -88,8 +168,20 @@ for CELLTYPE in ${CELLTYPES[@]}; do
       --project seaad_ec_multiome
   done
 done
+## HBCC
+for CELLTYPE in ${CELLTYPES[@]}; do
+  for MODALITY in ${MODALITIES[@]}; do
+    uv run phase2/analyses/filter_regression_type_differences.py \
+      --modality ${MODALITY} \
+      --cell-type ${CELLTYPE} \
+      --work-dir "$DATADIR" \
+      --target-variable age \
+      --project aging_phase2
+  done
+done
 
 # visualize similarities of disease status effects between course and ganular cell-type
+## SEA-AD
 for MODALITY in ${MODALITIES[@]}; do
   uv run phase2/figures/pairwise_celltype_effect_comparison.py \
     --modality ${MODALITY} \
@@ -98,4 +190,14 @@ for MODALITY in ${MODALITIES[@]}; do
     --target-variable dx \
     --work-dir "$DATADIR"/public/seaad \
     --project seaad_ec_multiome
+done
+## HBCC
+for MODALITY in ${MODALITIES[@]}; do
+  uv run phase2/figures/pairwise_celltype_effect_comparison.py \
+    --modality ${MODALITY} \
+    --cell-type-1 ExN_CUX2 \
+    --cell-type-2 ${CELLTYPE} \
+    --target-variable age \
+    --work-dir "$DATADIR" \
+    --project aging_phase2
 done
