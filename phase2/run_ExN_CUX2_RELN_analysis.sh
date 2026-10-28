@@ -18,6 +18,15 @@ cux2_reln.write(f'{data_dir}/public/seaad/seaad_ec_multiome_exn_cux2_reln.h5mu')
 # for the HBCC EC data will need to subset previous ExN CUX2 cells import the more granular cell-type labels
 # to include ExN CUX2 RELN, etc. SAHA labels for the RNA cells and then train a classifier to predict the more
 # granular ExN CUX2 subtype labels for the ATAC cells
+uv run phase2/quantifications/predict_subtypes_from_multivi.py \
+  --project aging_phase2 \
+  --work-dir "$DATADIR" \
+  --cell-type "ExN CUX2" \
+  --labels-file "$DATADIR"/quants/resolution_selection/ExN_res_obs_annotated__ALLDATASETS_refresh_res_0.3_subtype.csv \
+  --barcode-col X \
+  --label-col final_anno_subclust \
+  --output-file "$DATADIR"/quants/aging_phase2.ExN_CUX2.multivi.annotated.h5ad \
+  --debug
 
 # convert to pseudobulk per cell-type
 uv run phase2/SEAAD/analyses/pseudobulk_convert.py \
